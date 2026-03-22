@@ -15,16 +15,26 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Progress } from "@/components/ui/progress"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import {
-  BarChart3,
-  ClipboardCheck,
-  Cloud,
-  Database,
-  FileText,
-  Layers3,
-  Search,
-  UserPlus,
-} from "lucide-react"
+import { BarChart3, ClipboardCheck, Cloud, Database, FileText, Layers3, Search, UserPlus } from "lucide-react"
+
+type FunctionalDimension = "inclinacion" | "disfrute" | "confirmacion" | "fruto"
+type SpiritualDimension = "sensibilidad" | "fruto" | "confirmacion"
+
+type FunctionalQuestion = {
+  id: string
+  gift: string
+  text: string
+  dimension: FunctionalDimension
+  order: number
+}
+
+type SpiritualQuestion = {
+  id: string
+  gift: string
+  text: string
+  dimension: SpiritualDimension
+  order: number
+}
 
 type Profile = {
   id: number
@@ -89,7 +99,7 @@ const FUNCTIONAL_GIFTS = [
   "Generosidad",
   "Pastoreo",
   "Sabiduría",
-]
+] as const
 
 const SPIRITUAL_GIFTS = [
   "Palabra de conocimiento",
@@ -102,51 +112,316 @@ const SPIRITUAL_GIFTS = [
   "Administración",
   "Intercesión",
   "Discernimiento espiritual avanzado",
-]
+] as const
 
 const ALL_GIFTS = [...FUNCTIONAL_GIFTS, ...SPIRITUAL_GIFTS]
 
-const FUNCTIONAL_AXES = [
-  "Inclinación",
-  "Problema que te activa",
-  "Disfrute",
-  "Fruto",
-  "Confirmación",
-  "Autoridad espiritual",
-  "Carga espiritual",
-  "Experiencia sobrenatural",
-]
+const FUNCTIONAL_DIMENSION_LABELS: Record<FunctionalDimension, string> = {
+  inclinacion: "Inclinación",
+  disfrute: "Disfrute",
+  confirmacion: "Confirmación",
+  fruto: "Fruto",
+}
 
-const FUNCTIONAL_QUESTIONS = FUNCTIONAL_GIFTS.flatMap((gift, giftIndex) =>
-  FUNCTIONAL_AXES.map((axis, axisIndex) => ({
-    id: `F-${giftIndex + 1}-${axisIndex + 1}`,
-    gift,
-    axis,
-    bucket:
-      axisIndex <= 2
-        ? "inclinacion"
-        : axisIndex === 3
-          ? "fruto"
-          : axisIndex === 4
-            ? "confirmacion"
-            : axisIndex === 5
-              ? "autoridad"
-              : axisIndex === 6
-                ? "carga"
-                : "sobrenatural",
-  })),
-).slice(0, 48)
+const SPIRITUAL_DIMENSION_LABELS: Record<SpiritualDimension, string> = {
+  sensibilidad: "Sensibilidad",
+  fruto: "Fruto",
+  confirmacion: "Confirmación",
+}
 
-const SPIRITUAL_AXES = ["Sensibilidad", "Fruto", "Confirmación"]
-const SPIRITUAL_QUESTIONS = SPIRITUAL_GIFTS.flatMap((gift, giftIndex) =>
-  SPIRITUAL_AXES.map((axis, axisIndex) => ({
-    id: `S-${giftIndex + 1}-${axisIndex + 1}`,
+const FUNCTIONAL_QUESTION_BANK: Record<string, { text: string; dimension: FunctionalDimension }[]> = {
+  Enseñanza: [
+    {
+      text: "Cuando una persona no entiende una verdad bíblica o un tema importante, siento carga por explicarlo de forma clara y ordenada.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Disfruto estudiar, estructurar y transmitir conocimiento para que otros comprendan mejor un tema.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Con frecuencia otras personas me buscan para que les aclare dudas o les ayude a entender algo paso a paso.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Si debo preparar una explicación o clase, normalmente encuentro facilidad para organizar ideas y comunicar con sentido.",
+      dimension: "fruto",
+    },
+  ],
+  Liderazgo: [
+    {
+      text: "Cuando un grupo está desorganizado o sin dirección, naturalmente empiezo a ordenar, orientar y mover a las personas hacia una meta.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Me siento cómodo tomando responsabilidad para coordinar personas, tiempos o tareas cuando hace falta avanzar.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Otras personas suelen seguir mis indicaciones o buscar mi dirección cuando hay que tomar decisiones o definir rumbo.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Disfruto ver cómo un equipo crece, se ordena y cumple objetivos cuando hay una conducción clara.",
+      dimension: "fruto",
+    },
+  ],
+  Servicio: [
+    {
+      text: "Cuando veo una necesidad práctica, mi impulso es ayudar de inmediato aunque nadie me lo pida.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Me siento realizado cuando apoyo tareas concretas que facilitan el trabajo o el bienestar de otros.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Con frecuencia participo resolviendo asuntos prácticos, operativos o logísticos sin buscar protagonismo.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Las personas suelen reconocer en mí disposición constante para ayudar, colaborar y atender necesidades reales.",
+      dimension: "fruto",
+    },
+  ],
+  Misericordia: [
+    {
+      text: "Cuando veo a alguien herido, vulnerable o en sufrimiento, siento una carga profunda por acompañarlo y aliviar su dolor.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Me resulta natural acercarme con compasión, paciencia y sensibilidad a personas que están pasando por momentos difíciles.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Otros suelen percibir en mí empatía genuina y capacidad para consolar sin juzgar duramente.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Disfruto restaurar, cuidar y sostener emocional o espiritualmente a personas que necesitan apoyo.",
+      dimension: "fruto",
+    },
+  ],
+  Exhortación: [
+    {
+      text: "Cuando alguien está estancado, desanimado o desviado, siento impulso por animarlo, corregirlo y ayudarlo a avanzar.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Me es natural hablar con claridad para motivar, fortalecer o llamar a una persona a responder correctamente.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Con frecuencia mis palabras ayudan a otros a reaccionar, tomar decisiones o perseverar en medio de la dificultad.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Disfruto acompañar procesos de crecimiento personal o espiritual ayudando a otros a dar el siguiente paso.",
+      dimension: "fruto",
+    },
+  ],
+  Evangelismo: [
+    {
+      text: "Siento carga por compartir el mensaje de salvación con personas que aún no conocen a Cristo.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Me resulta natural iniciar conversaciones espirituales o presentar el evangelio de forma sencilla y directa.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Con frecuencia identifico oportunidades para hablar de Jesús y animar a otros a responder a la fe.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Disfruto ver a personas acercarse a Dios, interesarse por el evangelio o tomar decisiones espirituales.",
+      dimension: "fruto",
+    },
+  ],
+  Fe: [
+    {
+      text: "Cuando otros dudan o ven imposible una situación, dentro de mí suele permanecer una confianza firme en que Dios puede actuar.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Me resulta natural sostener esperanza, orar con convicción y permanecer firme aun cuando no hay evidencias visibles.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Otras personas encuentran ánimo o estabilidad en mi manera de confiar en Dios en medio de procesos difíciles.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Disfruto asumir retos espirituales o ministeriales confiando en la provisión y respaldo de Dios.",
+      dimension: "fruto",
+    },
+  ],
+  Discernimiento: [
+    {
+      text: "Con frecuencia percibo diferencias entre lo auténtico y lo engañoso en personas, ambientes, mensajes o decisiones.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Cuando algo no está bien, suelo identificarlo internamente aun antes de tener toda la información visible.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Otras personas buscan mi opinión para evaluar si una situación, propuesta o influencia es sana o no.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Disfruto ayudar a filtrar, evaluar y distinguir con sabiduría lo que conviene de lo que debe evitarse.",
+      dimension: "fruto",
+    },
+  ],
+  Profecía: [
+    {
+      text: "Siento carga por expresar con verdad y valentía lo que Dios demanda o lo que una situación necesita escuchar.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Me resulta natural confrontar lo incorrecto, señalar desvíos o llamar a una respuesta alineada con la voluntad de Dios.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Con frecuencia mis palabras producen conciencia, convicción o claridad espiritual en otros.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Disfruto comunicar mensajes directos, pertinentes y espiritualmente incisivos cuando es necesario.",
+      dimension: "fruto",
+    },
+  ],
+  Generosidad: [
+    {
+      text: "Cuando detecto una necesidad, me nace compartir recursos, tiempo o bienes para suplirla con alegría.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Me resulta natural dar sin sentir que pierdo, especialmente cuando percibo que eso bendice o impulsa a otros.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Otras personas suelen reconocer en mí disposición abierta para contribuir materialmente o sostener causas valiosas.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Disfruto sembrar recursos en personas, proyectos o necesidades con sentido de propósito y gratitud.",
+      dimension: "fruto",
+    },
+  ],
+  Pastoreo: [
+    {
+      text: "Siento carga por cuidar, acompañar y dar seguimiento continuo al crecimiento de personas o grupos.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Me resulta natural interesarme por el estado espiritual, emocional y práctico de otros de forma constante.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Con frecuencia las personas me buscan para consejo, cuidado, acompañamiento o dirección cercana.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Disfruto ver procesos de madurez, protección y restauración sostenidos en personas que acompaño.",
+      dimension: "fruto",
+    },
+  ],
+  Sabiduría: [
+    {
+      text: "Cuando surgen problemas complejos, suelo ver conexiones, caminos de solución y aplicaciones prácticas que otros no perciben fácilmente.",
+      dimension: "inclinacion",
+    },
+    {
+      text: "Me resulta natural traducir principios espirituales o conocimientos en decisiones útiles, prudentes y oportunas.",
+      dimension: "disfrute",
+    },
+    {
+      text: "Otras personas buscan mi consejo cuando necesitan claridad para decidir correctamente en situaciones difíciles.",
+      dimension: "confirmacion",
+    },
+    {
+      text: "Disfruto aportar perspectiva, criterio y dirección práctica que ayude a resolver asuntos con equilibrio y madurez.",
+      dimension: "fruto",
+    },
+  ],
+}
+
+const SPIRITUAL_QUESTION_BANK: Record<string, { text: string; dimension: SpiritualDimension }[]> = {
+  "Palabra de conocimiento": [
+    { text: "Percibo información puntual que ayuda a entender la situación de una persona o asunto más allá de lo evidente.", dimension: "sensibilidad" },
+    { text: "Cuando comparto una impresión específica, suele traer claridad o dirección útil.", dimension: "fruto" },
+    { text: "Otros han confirmado que ciertas percepciones mías eran precisas y oportunas.", dimension: "confirmacion" },
+  ],
+  Sanidades: [
+    { text: "Siento carga por orar por enfermos y esperar intervención de Dios.", dimension: "sensibilidad" },
+    { text: "Mi oración por salud o restauración suele traer consuelo, mejoría o esperanza concreta.", dimension: "fruto" },
+    { text: "Otras personas han reconocido respaldo especial cuando intercedo por sanidad.", dimension: "confirmacion" },
+  ],
+  Milagros: [
+    { text: "Creo y pido por intervenciones extraordinarias de Dios ante situaciones humanamente imposibles.", dimension: "sensibilidad" },
+    { text: "He visto respuestas inusuales o notables al orar o actuar en fe.", dimension: "fruto" },
+    { text: "Otros han confirmado que Dios ha obrado de manera fuera de lo común en contextos donde participé.", dimension: "confirmacion" },
+  ],
+  Lenguas: [
+    { text: "Tengo sensibilidad para expresar oración o alabanza espiritual más allá del lenguaje común.", dimension: "sensibilidad" },
+    { text: "Esta expresión suele edificar mi vida espiritual y fortalecer mi comunión con Dios.", dimension: "fruto" },
+    { text: "En contextos apropiados y ordenados, otros han reconocido este fluir espiritual.", dimension: "confirmacion" },
+  ],
+  "Interpretación de lenguas": [
+    { text: "Percibo sentido o dirección al escuchar una expresión espiritual en lenguas.", dimension: "sensibilidad" },
+    { text: "Cuando comparto la interpretación, suele aportar edificación o claridad al grupo.", dimension: "fruto" },
+    { text: "Otros han confirmado que mi interpretación fue coherente y de bendición.", dimension: "confirmacion" },
+  ],
+  "Apostólico (envío)": [
+    { text: "Siento impulso por abrir obra, iniciar proyectos y establecer estructuras para avanzar.", dimension: "sensibilidad" },
+    { text: "Cuando emprendo algo nuevo, suelo generar orden, expansión o envío de personas.", dimension: "fruto" },
+    { text: "Otros han reconocido capacidad en mí para establecer, alinear y lanzar iniciativas.", dimension: "confirmacion" },
+  ],
+  Ayudas: [
+    { text: "Percibo con facilidad dónde apoyar para que una obra o equipo funcione mejor.", dimension: "sensibilidad" },
+    { text: "Mi ayuda práctica suele sostener y facilitar el avance de otros de manera tangible.", dimension: "fruto" },
+    { text: "Los demás suelen confirmar que mi apoyo ha sido clave y oportuno.", dimension: "confirmacion" },
+  ],
+  Administración: [
+    { text: "Tengo sensibilidad para ordenar recursos, procesos y personas con sentido estratégico.", dimension: "sensibilidad" },
+    { text: "Cuando organizo, las cosas suelen fluir con más claridad, estructura y eficacia.", dimension: "fruto" },
+    { text: "Otros suelen reconocer en mí habilidad para administrar y dar gobierno sano.", dimension: "confirmacion" },
+  ],
+  Intercesión: [
+    { text: "Siento carga persistente por orar profundamente por personas, situaciones o procesos.", dimension: "sensibilidad" },
+    { text: "Mi intercesión suele traer paz, dirección o avances que otros terminan reconociendo.", dimension: "fruto" },
+    { text: "Otras personas han confirmado en mí una carga especial y sostenida de oración.", dimension: "confirmacion" },
+  ],
+  "Discernimiento espiritual avanzado": [
+    { text: "Percibo con claridad la atmósfera espiritual o el origen de ciertas influencias en una situación.", dimension: "sensibilidad" },
+    { text: "Cuando comparto mi discernimiento, suele ayudar a tomar decisiones más seguras y correctas.", dimension: "fruto" },
+    { text: "Otros han confirmado que mis observaciones espirituales fueron acertadas y útiles.", dimension: "confirmacion" },
+  ],
+}
+
+const FUNCTIONAL_QUESTIONS: FunctionalQuestion[] = FUNCTIONAL_GIFTS.flatMap((gift, giftIndex) =>
+  FUNCTIONAL_QUESTION_BANK[gift].map((q, questionIndex) => ({
+    id: `F-${giftIndex + 1}-${questionIndex + 1}`,
     gift,
-    axis,
+    text: q.text,
+    dimension: q.dimension,
+    order: questionIndex + 1,
   })),
 )
 
-const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v3"
+const SPIRITUAL_QUESTIONS: SpiritualQuestion[] = SPIRITUAL_GIFTS.flatMap((gift, giftIndex) =>
+  SPIRITUAL_QUESTION_BANK[gift].map((q, questionIndex) => ({
+    id: `S-${giftIndex + 1}-${questionIndex + 1}`,
+    gift,
+    text: q.text,
+    dimension: q.dimension,
+    order: questionIndex + 1,
+  })),
+)
+
+const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v4"
 
 const SQL_SCHEMA = `create extension if not exists pgcrypto;
 
@@ -270,20 +545,31 @@ function getReliability(answered: number, total: number) {
 
 function computeFunctionalEvaluation(raw?: Partial<Evaluation>) {
   const answers = raw?.functional_answers || {}
-  const scores = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0]))
-  const buckets: Record<string, number[]> = {
+  const scores = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const dimensionsByGift = Object.fromEntries(
+    FUNCTIONAL_GIFTS.map((g) => [
+      g,
+      {
+        inclinacion: 0,
+        disfrute: 0,
+        confirmacion: 0,
+        fruto: 0,
+      },
+    ]),
+  ) as Record<string, Record<FunctionalDimension, number>>
+
+  const globalDimensions: Record<FunctionalDimension, number[]> = {
     inclinacion: [],
-    fruto: [],
+    disfrute: [],
     confirmacion: [],
-    autoridad: [],
-    carga: [],
-    sobrenatural: [],
+    fruto: [],
   }
 
   FUNCTIONAL_QUESTIONS.forEach((q) => {
     const value = Number(answers[q.id] || 0)
     scores[q.gift] += value
-    buckets[q.bucket].push(value)
+    dimensionsByGift[q.gift][q.dimension] += value
+    globalDimensions[q.dimension].push(value)
   })
 
   const answered = FUNCTIONAL_QUESTIONS.filter((q) => answers[q.id] !== "" && answers[q.id] != null).length
@@ -298,24 +584,42 @@ function computeFunctionalEvaluation(raw?: Partial<Evaluation>) {
     semaphore: getSemaphore(maturityPct),
     scores,
     top3: topNFromScores(scores, 3),
-    axes: {
-      inclinacion: average(buckets.inclinacion) / 5,
-      fruto: average(buckets.fruto) / 5,
-      confirmacion: average(buckets.confirmacion) / 5,
-      autoridad: average(buckets.autoridad) / 5,
-      carga: average(buckets.carga) / 5,
-      sobrenatural: average(buckets.sobrenatural) / 5,
+    dimensionsByGift,
+    globalDimensions: {
+      inclinacion: average(globalDimensions.inclinacion) / 5,
+      disfrute: average(globalDimensions.disfrute) / 5,
+      confirmacion: average(globalDimensions.confirmacion) / 5,
+      fruto: average(globalDimensions.fruto) / 5,
     },
   }
 }
 
 function computeSpiritualEvaluation(raw?: Partial<Evaluation>) {
   const answers = raw?.spiritual_answers || {}
-  const scores = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0]))
+  const scores = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+
+  const dimensionsByGift = Object.fromEntries(
+    SPIRITUAL_GIFTS.map((g) => [
+      g,
+      {
+        sensibilidad: 0,
+        fruto: 0,
+        confirmacion: 0,
+      },
+    ]),
+  ) as Record<string, Record<SpiritualDimension, number>>
+
+  const globalDimensions: Record<SpiritualDimension, number[]> = {
+    sensibilidad: [],
+    fruto: [],
+    confirmacion: [],
+  }
 
   SPIRITUAL_QUESTIONS.forEach((q) => {
     const value = Number(answers[q.id] || 0)
     scores[q.gift] += value
+    dimensionsByGift[q.gift][q.dimension] += value
+    globalDimensions[q.dimension].push(value)
   })
 
   const answered = SPIRITUAL_QUESTIONS.filter((q) => answers[q.id] !== "" && answers[q.id] != null).length
@@ -330,12 +634,18 @@ function computeSpiritualEvaluation(raw?: Partial<Evaluation>) {
     semaphore: getSemaphore(maturityPct),
     scores,
     top3: topNFromScores(scores, 3),
+    dimensionsByGift,
+    globalDimensions: {
+      sensibilidad: average(globalDimensions.sensibilidad) / 5,
+      fruto: average(globalDimensions.fruto) / 5,
+      confirmacion: average(globalDimensions.confirmacion) / 5,
+    },
   }
 }
 
 function recognitionSummaryForUser(userId: number, recognitions: PeerRecognition[]) {
   const rows = recognitions.filter((r) => Number(r.to_profile_id) === Number(userId))
-  const counts = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0]))
+  const counts = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
 
   rows.forEach((r) => {
     ;(r.gifts || []).forEach((gift) => {
@@ -362,20 +672,24 @@ function buildGroupReport(
     return computeFunctionalEvaluation(ev).answered === 48 && computeSpiritualEvaluation(ev).answered === 30
   })
 
-  const functionalAgg = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0]))
-  const spiritualAgg = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0]))
-  const allAgg = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0]))
-  const confirmations = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0]))
+  const functionalAgg = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const spiritualAgg = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const allAgg = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const confirmations = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
   const reliabilities: Record<string, number> = { Alta: 0, Media: 0, Baja: 0, "Sin datos": 0 }
   const semaphores: Record<string, number> = { Verde: 0, Amarillo: 0, Rojo: 0, "Sin datos": 0 }
 
-  const axisTotals = {
+  const functionalGlobal = {
     inclinacion: 0,
+    disfrute: 0,
+    confirmacion: 0,
+    fruto: 0,
+  }
+
+  const spiritualGlobal = {
+    sensibilidad: 0,
     fruto: 0,
     confirmacion: 0,
-    autoridad: 0,
-    carga: 0,
-    sobrenatural: 0,
   }
 
   completeMembers.forEach((member) => {
@@ -396,9 +710,14 @@ function buildGroupReport(
     reliabilities[functional.reliability] = (reliabilities[functional.reliability] || 0) + 1
     semaphores[functional.semaphore] = (semaphores[functional.semaphore] || 0) + 1
 
-    Object.keys(axisTotals).forEach((key) => {
-      axisTotals[key as keyof typeof axisTotals] += functional.axes[key as keyof typeof functional.axes] || 0
-    })
+    functionalGlobal.inclinacion += functional.globalDimensions.inclinacion
+    functionalGlobal.disfrute += functional.globalDimensions.disfrute
+    functionalGlobal.confirmacion += functional.globalDimensions.confirmacion
+    functionalGlobal.fruto += functional.globalDimensions.fruto
+
+    spiritualGlobal.sensibilidad += spiritual.globalDimensions.sensibilidad
+    spiritualGlobal.fruto += spiritual.globalDimensions.fruto
+    spiritualGlobal.confirmacion += spiritual.globalDimensions.confirmacion
   })
 
   recognitions
@@ -420,16 +739,19 @@ function buildGroupReport(
     confirmations,
     reliabilities,
     semaphores,
-    axisAvg: {
-      inclinacion: axisTotals.inclinacion / divisor,
-      fruto: axisTotals.fruto / divisor,
-      confirmacion: axisTotals.confirmacion / divisor,
-      autoridad: axisTotals.autoridad / divisor,
-      carga: axisTotals.carga / divisor,
-      sobrenatural: axisTotals.sobrenatural / divisor,
-    },
     top22: topNFromScores(allAgg, 22),
     topConfirmations: topNFromScores(confirmations, 22),
+    functionalDimensionsAvg: {
+      inclinacion: functionalGlobal.inclinacion / divisor,
+      disfrute: functionalGlobal.disfrute / divisor,
+      confirmacion: functionalGlobal.confirmacion / divisor,
+      fruto: functionalGlobal.fruto / divisor,
+    },
+    spiritualDimensionsAvg: {
+      sensibilidad: spiritualGlobal.sensibilidad / divisor,
+      fruto: spiritualGlobal.fruto / divisor,
+      confirmacion: spiritualGlobal.confirmacion / divisor,
+    },
   }
 }
 
@@ -1012,12 +1334,12 @@ export default function Page() {
           <CardContent className="p-5 md:p-7">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · Web + Base de datos</div>
+                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · Lógica tipo Excel</div>
                 <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                   Sistema multiusuario de dones funcionales y espirituales
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  Compatible con celular y PC. Permite usuarios, grupos, evaluación, confirmación por terceros y reportes.
+                  Compatible con celular y PC. Integra autodiagnóstico, confirmación por terceros, reportes y base de datos.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -1057,19 +1379,11 @@ export default function Page() {
             <div className="grid gap-3 md:grid-cols-3">
               <div className="space-y-2 md:col-span-1">
                 <Label>Supabase URL</Label>
-                <Input
-                  value={supabaseUrl}
-                  onChange={(e) => setSupabaseUrl(e.target.value)}
-                  placeholder="https://xxxx.supabase.co"
-                />
+                <Input value={supabaseUrl} onChange={(e) => setSupabaseUrl(e.target.value)} placeholder="https://xxxx.supabase.co" />
               </div>
               <div className="space-y-2 md:col-span-2">
                 <Label>Supabase anon key</Label>
-                <Input
-                  value={supabaseAnonKey}
-                  onChange={(e) => setSupabaseAnonKey(e.target.value)}
-                  placeholder="eyJ..."
-                />
+                <Input value={supabaseAnonKey} onChange={(e) => setSupabaseAnonKey(e.target.value)} placeholder="eyJ..." />
               </div>
             </div>
 
@@ -1116,7 +1430,7 @@ export default function Page() {
           <TabsContent value="inicio" className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <FeatureCard icon={UserPlus} title="Crear usuario" description="Alta con ID automático y datos básicos." onClick={() => setActiveTab("usuarios")} />
-              <FeatureCard icon={ClipboardCheck} title="Evaluar" description="48 funcionales y 30 espirituales por persona." onClick={() => setActiveTab("evaluar")} />
+              <FeatureCard icon={ClipboardCheck} title="Evaluar" description="48 funcionales y 30 espirituales con lógica tipo Excel." onClick={() => setActiveTab("evaluar")} />
               <FeatureCard icon={Layers3} title="Grupos" description="Arma grupos de hasta 300 personas." onClick={() => setActiveTab("grupos")} />
               <FeatureCard icon={BarChart3} title="Reportes" description="Persona, grupo, top 22 y confirmaciones." onClick={() => setActiveTab("reportes")} />
             </div>
@@ -1221,7 +1535,9 @@ export default function Page() {
             <Card className="rounded-3xl">
               <CardHeader>
                 <CardTitle>Evaluar usuario</CardTitle>
-                <CardDescription>Captura simultánea disponible cuando la plataforma usa Supabase.</CardDescription>
+                <CardDescription>
+                  La capa funcional usa 48 reactivos concretos: 4 preguntas por cada uno de los 12 dones funcionales.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -1241,35 +1557,79 @@ export default function Page() {
                 </div>
 
                 {selectedProfile && selectedEvaluation && functionalReport && spiritualReport ? (
-                  <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="space-y-4">
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <Card className="rounded-2xl">
+                        <CardHeader>
+                          <CardTitle className="text-base">Resumen funcional</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                            <Metric label="Contestadas" value={`${functionalReport.answered}/48`} />
+                            <Metric label="Confiabilidad" value={functionalReport.reliability} />
+                            <Metric label="Semáforo" value={functionalReport.semaphore} />
+                            <Metric label="Madurez" value={`${Math.round(functionalReport.maturityPct * 100)}%`} />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="rounded-2xl">
+                        <CardHeader>
+                          <CardTitle className="text-base">Resumen espiritual</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                            <Metric label="Contestadas" value={`${spiritualReport.answered}/30`} />
+                            <Metric label="Confiabilidad" value={spiritualReport.reliability} />
+                            <Metric label="Semáforo" value={spiritualReport.semaphore} />
+                            <Metric label="Madurez" value={`${Math.round(spiritualReport.maturityPct * 100)}%`} />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
                     <Card className="rounded-2xl">
                       <CardHeader>
-                        <CardTitle className="text-base">Capa funcional</CardTitle>
+                        <CardTitle className="text-base">Capa funcional · 48 preguntas</CardTitle>
+                        <CardDescription>
+                          Cada don funcional tiene 4 preguntas: inclinación, disfrute, confirmación y fruto.
+                        </CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-                          <Metric label="Contestadas" value={`${functionalReport.answered}/48`} />
-                          <Metric label="Confiabilidad" value={functionalReport.reliability} />
-                          <Metric label="Semáforo" value={functionalReport.semaphore} />
-                          <Metric label="Madurez" value={`${Math.round(functionalReport.maturityPct * 100)}%`} />
-                        </div>
-
-                        <ScrollArea className="h-[520px] pr-3">
-                          <div className="space-y-3">
-                            {FUNCTIONAL_QUESTIONS.map((question, index) => (
-                              <div key={question.id} className="grid grid-cols-[1fr_92px] gap-3 rounded-2xl border p-3">
-                                <div>
-                                  <div className="text-xs text-slate-500">
-                                    {index + 1}. {question.gift}
+                        <ScrollArea className="h-[560px] pr-3">
+                          <div className="space-y-4">
+                            {FUNCTIONAL_GIFTS.map((gift) => {
+                              const giftQuestions = FUNCTIONAL_QUESTIONS.filter((q) => q.gift === gift)
+                              return (
+                                <div key={gift} className="rounded-2xl border p-4">
+                                  <div className="mb-3 flex items-center justify-between gap-3">
+                                    <div className="font-semibold">{gift}</div>
+                                    <Badge variant="secondary">
+                                      Total {functionalReport.scores[gift]}
+                                    </Badge>
                                   </div>
-                                  <div className="text-sm font-medium">{question.axis}</div>
+                                  <div className="space-y-3">
+                                    {giftQuestions.map((question, index) => (
+                                      <div key={question.id} className="grid grid-cols-[1fr_92px] gap-3 rounded-2xl border p-3">
+                                        <div>
+                                          <div className="mb-1 flex flex-wrap items-center gap-2">
+                                            <span className="text-xs text-slate-500">
+                                              {index + 1}. {FUNCTIONAL_DIMENSION_LABELS[question.dimension]}
+                                            </span>
+                                            <Badge variant="outline">{FUNCTIONAL_DIMENSION_LABELS[question.dimension]}</Badge>
+                                          </div>
+                                          <div className="text-sm">{question.text}</div>
+                                        </div>
+                                        <ScoreSelect
+                                          value={selectedEvaluation.functional_answers[question.id] ?? ""}
+                                          onChange={(value) => updateEvaluation(selectedProfile.id, "functional_answers", question.id, value)}
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                                <ScoreSelect
-                                  value={selectedEvaluation.functional_answers[question.id] ?? ""}
-                                  onChange={(value) => updateEvaluation(selectedProfile.id, "functional_answers", question.id, value)}
-                                />
-                              </div>
-                            ))}
+                              )
+                            })}
                           </div>
                         </ScrollArea>
                       </CardContent>
@@ -1277,32 +1637,43 @@ export default function Page() {
 
                     <Card className="rounded-2xl">
                       <CardHeader>
-                        <CardTitle className="text-base">Capa espiritual</CardTitle>
+                        <CardTitle className="text-base">Capa espiritual · 30 preguntas</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-                          <Metric label="Contestadas" value={`${spiritualReport.answered}/30`} />
-                          <Metric label="Confiabilidad" value={spiritualReport.reliability} />
-                          <Metric label="Semáforo" value={spiritualReport.semaphore} />
-                          <Metric label="Madurez" value={`${Math.round(spiritualReport.maturityPct * 100)}%`} />
-                        </div>
-
-                        <ScrollArea className="h-[520px] pr-3">
-                          <div className="space-y-3">
-                            {SPIRITUAL_QUESTIONS.map((question, index) => (
-                              <div key={question.id} className="grid grid-cols-[1fr_92px] gap-3 rounded-2xl border p-3">
-                                <div>
-                                  <div className="text-xs text-slate-500">
-                                    {index + 1}. {question.gift}
+                        <ScrollArea className="h-[560px] pr-3">
+                          <div className="space-y-4">
+                            {SPIRITUAL_GIFTS.map((gift) => {
+                              const giftQuestions = SPIRITUAL_QUESTIONS.filter((q) => q.gift === gift)
+                              return (
+                                <div key={gift} className="rounded-2xl border p-4">
+                                  <div className="mb-3 flex items-center justify-between gap-3">
+                                    <div className="font-semibold">{gift}</div>
+                                    <Badge variant="secondary">
+                                      Total {spiritualReport.scores[gift]}
+                                    </Badge>
                                   </div>
-                                  <div className="text-sm font-medium">{question.axis}</div>
+                                  <div className="space-y-3">
+                                    {giftQuestions.map((question, index) => (
+                                      <div key={question.id} className="grid grid-cols-[1fr_92px] gap-3 rounded-2xl border p-3">
+                                        <div>
+                                          <div className="mb-1 flex flex-wrap items-center gap-2">
+                                            <span className="text-xs text-slate-500">
+                                              {index + 1}. {SPIRITUAL_DIMENSION_LABELS[question.dimension]}
+                                            </span>
+                                            <Badge variant="outline">{SPIRITUAL_DIMENSION_LABELS[question.dimension]}</Badge>
+                                          </div>
+                                          <div className="text-sm">{question.text}</div>
+                                        </div>
+                                        <ScoreSelect
+                                          value={selectedEvaluation.spiritual_answers[question.id] ?? ""}
+                                          onChange={(value) => updateEvaluation(selectedProfile.id, "spiritual_answers", question.id, value)}
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                                <ScoreSelect
-                                  value={selectedEvaluation.spiritual_answers[question.id] ?? ""}
-                                  onChange={(value) => updateEvaluation(selectedProfile.id, "spiritual_answers", question.id, value)}
-                                />
-                              </div>
-                            ))}
+                              )
+                            })}
                           </div>
                         </ScrollArea>
                       </CardContent>
@@ -1532,15 +1903,24 @@ export default function Page() {
 
                       <Card className="rounded-2xl border-dashed">
                         <CardHeader>
-                          <CardTitle className="text-base">Ejes del diagnóstico funcional</CardTitle>
+                          <CardTitle className="text-base">Rubros globales funcionales</CardTitle>
                         </CardHeader>
-                        <CardContent className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-                          <Metric label="Inclinación" value={`${Math.round(functionalReport.axes.inclinacion * 100)}%`} />
-                          <Metric label="Fruto" value={`${Math.round(functionalReport.axes.fruto * 100)}%`} />
-                          <Metric label="Confirmación" value={`${Math.round(functionalReport.axes.confirmacion * 100)}%`} />
-                          <Metric label="Autoridad" value={`${Math.round(functionalReport.axes.autoridad * 100)}%`} />
-                          <Metric label="Carga" value={`${Math.round(functionalReport.axes.carga * 100)}%`} />
-                          <Metric label="Sobrenatural" value={`${Math.round(functionalReport.axes.sobrenatural * 100)}%`} />
+                        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          <Metric label="Inclinación" value={`${Math.round(functionalReport.globalDimensions.inclinacion * 100)}%`} />
+                          <Metric label="Disfrute" value={`${Math.round(functionalReport.globalDimensions.disfrute * 100)}%`} />
+                          <Metric label="Confirmación" value={`${Math.round(functionalReport.globalDimensions.confirmacion * 100)}%`} />
+                          <Metric label="Fruto" value={`${Math.round(functionalReport.globalDimensions.fruto * 100)}%`} />
+                        </CardContent>
+                      </Card>
+
+                      <Card className="rounded-2xl border-dashed">
+                        <CardHeader>
+                          <CardTitle className="text-base">Rubros globales espirituales</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid gap-3 md:grid-cols-3">
+                          <Metric label="Sensibilidad" value={`${Math.round(spiritualReport.globalDimensions.sensibilidad * 100)}%`} />
+                          <Metric label="Fruto" value={`${Math.round(spiritualReport.globalDimensions.fruto * 100)}%`} />
+                          <Metric label="Confirmación" value={`${Math.round(spiritualReport.globalDimensions.confirmacion * 100)}%`} />
                         </CardContent>
                       </Card>
                     </CardContent>
@@ -1591,18 +1971,27 @@ export default function Page() {
                         />
                         <Card className="rounded-2xl">
                           <CardHeader>
-                            <CardTitle className="text-base">Promedios por eje</CardTitle>
+                            <CardTitle className="text-base">Promedios funcionales del grupo</CardTitle>
                           </CardHeader>
-                          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                            <Metric label="Inclinación" value={`${Math.round(groupReport.axisAvg.inclinacion * 100)}%`} />
-                            <Metric label="Fruto" value={`${Math.round(groupReport.axisAvg.fruto * 100)}%`} />
-                            <Metric label="Confirmación" value={`${Math.round(groupReport.axisAvg.confirmacion * 100)}%`} />
-                            <Metric label="Autoridad" value={`${Math.round(groupReport.axisAvg.autoridad * 100)}%`} />
-                            <Metric label="Carga" value={`${Math.round(groupReport.axisAvg.carga * 100)}%`} />
-                            <Metric label="Sobrenatural" value={`${Math.round(groupReport.axisAvg.sobrenatural * 100)}%`} />
+                          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                            <Metric label="Inclinación" value={`${Math.round(groupReport.functionalDimensionsAvg.inclinacion * 100)}%`} />
+                            <Metric label="Disfrute" value={`${Math.round(groupReport.functionalDimensionsAvg.disfrute * 100)}%`} />
+                            <Metric label="Confirmación" value={`${Math.round(groupReport.functionalDimensionsAvg.confirmacion * 100)}%`} />
+                            <Metric label="Fruto" value={`${Math.round(groupReport.functionalDimensionsAvg.fruto * 100)}%`} />
                           </CardContent>
                         </Card>
                       </div>
+
+                      <Card className="rounded-2xl">
+                        <CardHeader>
+                          <CardTitle className="text-base">Promedios espirituales del grupo</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid gap-3 md:grid-cols-3">
+                          <Metric label="Sensibilidad" value={`${Math.round(groupReport.spiritualDimensionsAvg.sensibilidad * 100)}%`} />
+                          <Metric label="Fruto" value={`${Math.round(groupReport.spiritualDimensionsAvg.fruto * 100)}%`} />
+                          <Metric label="Confirmación" value={`${Math.round(groupReport.spiritualDimensionsAvg.confirmacion * 100)}%`} />
+                        </CardContent>
+                      </Card>
                     </CardContent>
                   </Card>
                 ) : null}
