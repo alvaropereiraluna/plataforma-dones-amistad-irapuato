@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { createClient, SupabaseClient } from "@supabase/supabase-js"
-import html2canvas from "html2canvas"
 import jsPDF from "jspdf"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -23,7 +22,6 @@ import {
   Cloud,
   Database,
   Download,
-  Layers3,
   Pencil,
   Save,
   Search,
@@ -34,6 +32,7 @@ import {
 
 type FunctionalDimension = "inclinacion" | "disfrute" | "confirmacion" | "fruto"
 type SpiritualDimension = "sensibilidad" | "fruto" | "confirmacion"
+type ReportMode = "persona" | "grupo" | "don"
 
 type FunctionalQuestion = {
   id: string
@@ -59,7 +58,6 @@ type Profile = {
   church: string | null
   service_areas: string | null
   created_at?: string
-  updated_at?: string
 }
 
 type Evaluation = {
@@ -101,7 +99,7 @@ type ConnectionState = {
   message: string
 }
 
-type ReportMode = "persona" | "grupo" | "don"
+const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v8"
 
 const FUNCTIONAL_GIFTS = [
   "Enseñanza",
@@ -132,8 +130,6 @@ const SPIRITUAL_GIFTS = [
 ] as const
 
 const ALL_GIFTS = [...FUNCTIONAL_GIFTS, ...SPIRITUAL_GIFTS]
-
-const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v7"
 
 const FUNCTIONAL_DIMENSION_LABELS: Record<FunctionalDimension, string> = {
   inclinacion: "Inclinación",
@@ -296,245 +292,212 @@ const SPIRITUAL_QUESTIONS: SpiritualQuestion[] = SPIRITUAL_GIFTS.flatMap((gift, 
   })),
 )
 
-function buildEmptyState(): AppState {
-  return {
-    profiles: [],
-    evaluations: {},
-    groups: [],
-    peerRecognitions: [],
-    nextProfileId: 1,
-    nextGroupId: 1,
-  }
-}
+// ---------- PDF helpers ----------
 
-function blankFunctionalAnswers(): Record<string, number | ""> {
-  return Object.fromEntries(FUNCTIONAL_QUESTIONS.map((q) => [q.id, ""]))
-}
+function createPdf(title: string) {
+  const pdf = new jsPDF("p", "mm", "a4")
+  const pageWidth = 210
+  const pageHeight = 297
+  const margin = 14
+  let y = margin
 
-function blankSpiritualAnswers(): Record<string, number | ""> {
-  return Object.fromEntries(SPIRITUAL_QUESTIONS.map((q) => [q.id, ""]))
-}
-
-function topNFromScores(scoreMap: Record<string, number>, n = 3) {
-  return Object.entries(scoreMap)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, n)
-    .map(([name, score]) => ({ name, score }))
-}
-
-function average(values: number[]) {
-  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
-}
-
-function getReliability(answered: number, total: number) {
-  const pct = total ? answered / total : 0
-  if (pct >= 1) return "Alta"
-  if (pct >= 0.75) return "Media"
-  if (pct > 0) return "Baja"
-  return "Sin datos"
-}
-
-function getSemaphore(pct: number) {
-  if (pct >= 0.8) return "Verde"
-  if (pct >= 0.6) return "Amarillo"
-  if (pct > 0) return "Rojo"
-  return "Sin datos"
-}
-
-function getScoreBgClass(score: number) {
-  if (score >= 5) return "bg-emerald-100 text-emerald-800 border-emerald-200"
-  if (score >= 4) return "bg-lime-100 text-lime-800 border-lime-200"
-  if (score >= 3) return "bg-amber-100 text-amber-800 border-amber-200"
-  if (score >= 2) return "bg-orange-100 text-orange-800 border-orange-200"
-  if (score >= 1) return "bg-rose-100 text-rose-800 border-rose-200"
-  return "bg-white"
-}
-
-function getPercentBgClass(percent: number) {
-  if (percent >= 80) return "bg-emerald-100 text-emerald-800 border-emerald-200"
-  if (percent >= 60) return "bg-lime-100 text-lime-800 border-lime-200"
-  if (percent >= 40) return "bg-amber-100 text-amber-800 border-amber-200"
-  if (percent > 0) return "bg-rose-100 text-rose-800 border-rose-200"
-  return "bg-slate-100 text-slate-600 border-slate-200"
-}
-
-function computeFunctionalEvaluation(raw?: Partial<Evaluation>) {
-  const answers = raw?.functional_answers || {}
-  const scores = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  const globalDimensions: Record<FunctionalDimension, number[]> = {
-    inclinacion: [],
-    disfrute: [],
-    confirmacion: [],
-    fruto: [],
-  }
-
-  FUNCTIONAL_QUESTIONS.forEach((q) => {
-    const value = Number(answers[q.id] || 0)
-    scores[q.gift] += value
-    globalDimensions[q.dimension].push(value)
-  })
-
-  const answered = FUNCTIONAL_QUESTIONS.filter((q) => answers[q.id] !== "" && answers[q.id] != null).length
-  const maturityPct = Object.values(scores).reduce((a, b) => a + b, 0) / (FUNCTIONAL_GIFTS.length * 20)
-
-  return {
-    answered,
-    total: FUNCTIONAL_QUESTIONS.length,
-    completionPct: answered / FUNCTIONAL_QUESTIONS.length,
-    reliability: getReliability(answered, FUNCTIONAL_QUESTIONS.length),
-    maturityPct,
-    semaphore: getSemaphore(maturityPct),
-    scores,
-    top3: topNFromScores(scores, 3),
-    globalDimensions: {
-      inclinacion: average(globalDimensions.inclinacion) / 5,
-      disfrute: average(globalDimensions.disfrute) / 5,
-      confirmacion: average(globalDimensions.confirmacion) / 5,
-      fruto: average(globalDimensions.fruto) / 5,
-    },
-  }
-}
-
-function computeSpiritualEvaluation(raw?: Partial<Evaluation>) {
-  const answers = raw?.spiritual_answers || {}
-  const scores = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  const globalDimensions: Record<SpiritualDimension, number[]> = {
-    sensibilidad: [],
-    fruto: [],
-    confirmacion: [],
-  }
-
-  SPIRITUAL_QUESTIONS.forEach((q) => {
-    const value = Number(answers[q.id] || 0)
-    scores[q.gift] += value
-    globalDimensions[q.dimension].push(value)
-  })
-
-  const answered = SPIRITUAL_QUESTIONS.filter((q) => answers[q.id] !== "" && answers[q.id] != null).length
-  const maturityPct = Object.values(scores).reduce((a, b) => a + b, 0) / (SPIRITUAL_GIFTS.length * 15)
-
-  return {
-    answered,
-    total: SPIRITUAL_QUESTIONS.length,
-    completionPct: answered / SPIRITUAL_QUESTIONS.length,
-    reliability: getReliability(answered, SPIRITUAL_QUESTIONS.length),
-    maturityPct,
-    semaphore: getSemaphore(maturityPct),
-    scores,
-    top3: topNFromScores(scores, 3),
-    globalDimensions: {
-      sensibilidad: average(globalDimensions.sensibilidad) / 5,
-      fruto: average(globalDimensions.fruto) / 5,
-      confirmacion: average(globalDimensions.confirmacion) / 5,
-    },
-  }
-}
-
-function recognitionSummaryForUser(userId: number, recognitions: PeerRecognition[]) {
-  const rows = recognitions.filter((r) => r.to_profile_id === userId)
-  const counts = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  rows.forEach((r) => r.gifts.forEach((gift) => (counts[gift] += 1)))
-  return {
-    totalRecognizers: [...new Set(rows.map((r) => r.from_profile_id))].length,
-    counts,
-    top: topNFromScores(counts, 22),
-  }
-}
-
-function buildGroupReport(group: Group, profiles: Profile[], evaluations: Record<number, Evaluation>, recognitions: PeerRecognition[]) {
-  const members = profiles.filter((p) => group.memberIds.includes(p.id))
-  const completeMembers = members.filter((p) => {
-    const ev = evaluations[p.id] || {}
-    return computeFunctionalEvaluation(ev).answered === 48 && computeSpiritualEvaluation(ev).answered === 30
-  })
-
-  const functionalAgg = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  const spiritualAgg = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  const allAgg = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  const confirmations = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-
-  const functionalGlobal = { inclinacion: 0, disfrute: 0, confirmacion: 0, fruto: 0 }
-
-  completeMembers.forEach((member) => {
-    const ev = evaluations[member.id] || {}
-    const f = computeFunctionalEvaluation(ev)
-    const s = computeSpiritualEvaluation(ev)
-
-    Object.entries(f.scores).forEach(([gift, score]) => {
-      functionalAgg[gift] += score
-      allAgg[gift] += score
-    })
-    Object.entries(s.scores).forEach(([gift, score]) => {
-      spiritualAgg[gift] += score
-      allAgg[gift] += score
-    })
-
-    functionalGlobal.inclinacion += f.globalDimensions.inclinacion
-    functionalGlobal.disfrute += f.globalDimensions.disfrute
-    functionalGlobal.confirmacion += f.globalDimensions.confirmacion
-    functionalGlobal.fruto += f.globalDimensions.fruto
-  })
-
-  recognitions
-    .filter((r) => group.memberIds.includes(r.to_profile_id))
-    .forEach((r) => r.gifts.forEach((gift) => (confirmations[gift] += 1)))
-
-  const divisor = completeMembers.length || 1
-
-  return {
-    members,
-    completeMembers,
-    functionalAgg,
-    spiritualAgg,
-    allAgg,
-    confirmations,
-    top22: topNFromScores(allAgg, 22),
-    topConfirmations: topNFromScores(confirmations, 22),
-    functionalDimensionsAvg: {
-      inclinacion: functionalGlobal.inclinacion / divisor,
-      disfrute: functionalGlobal.disfrute / divisor,
-      confirmacion: functionalGlobal.confirmacion / divisor,
-      fruto: functionalGlobal.fruto / divisor,
-    },
-  }
-}
-
-function buildGiftInGroupReport(group: Group, gift: string, profiles: Profile[], evaluations: Record<number, Evaluation>, recognitions: PeerRecognition[]) {
-  const members = profiles.filter((p) => group.memberIds.includes(p.id))
-  const rows = members.map((member) => {
-    const ev = evaluations[member.id] || {}
-    const f = computeFunctionalEvaluation(ev)
-    const s = computeSpiritualEvaluation(ev)
-    const score =
-      gift in f.scores ? f.scores[gift] : gift in s.scores ? s.scores[gift] : 0
-    const seen = recognitions
-      .filter((r) => r.to_profile_id === member.id)
-      .reduce((acc, r) => acc + r.gifts.filter((g) => g === gift).length, 0)
-
-    return {
-      member,
-      score,
-      confirmations: seen,
-      completion:
-        ((f.answered / 48) * 100 + (s.answered / 30) * 100) / 2,
-      reliability: f.reliability,
-      semaphore: f.semaphore,
+  const addPageIfNeeded = (needed = 8) => {
+    if (y + needed > pageHeight - margin) {
+      pdf.addPage()
+      y = margin
     }
-  })
+  }
 
-  const sorted = [...rows].sort((a, b) => b.score - a.score)
-  const totalScore = rows.reduce((a, b) => a + b.score, 0)
-  const totalConfirmations = rows.reduce((a, b) => a + b.confirmations, 0)
-  const avgCompletion = rows.length ? rows.reduce((a, b) => a + b.completion, 0) / rows.length : 0
+  const line = (text: string, size = 10, bold = false) => {
+    addPageIfNeeded(7)
+    pdf.setFont("helvetica", bold ? "bold" : "normal")
+    pdf.setFontSize(size)
+    const lines = pdf.splitTextToSize(text, pageWidth - margin * 2)
+    pdf.text(lines, margin, y)
+    y += lines.length * (size * 0.42 + 1.2)
+  }
+
+  const divider = () => {
+    addPageIfNeeded(4)
+    pdf.setDrawColor(180)
+    pdf.line(margin, y, pageWidth - margin, y)
+    y += 4
+  }
+
+  const section = (text: string) => {
+    y += 2
+    line(text, 12, true)
+    y += 1
+  }
+
+  const kv = (label: string, value: string) => {
+    line(`${label}: ${value}`, 10, false)
+  }
+
+  const table = (headers: string[], rows: string[][], colWidths?: number[]) => {
+    const widths =
+      colWidths && colWidths.length === headers.length
+        ? colWidths
+        : headers.map(() => (pageWidth - margin * 2) / headers.length)
+
+    const drawRow = (cells: string[], isHeader = false) => {
+      const cellLines = cells.map((cell, i) => pdf.splitTextToSize(cell || "", widths[i] - 2))
+      const rowHeight = Math.max(...cellLines.map((l) => l.length), 1) * 4 + 2
+      addPageIfNeeded(rowHeight + 2)
+
+      let x = margin
+      pdf.setFont("helvetica", isHeader ? "bold" : "normal")
+      pdf.setFontSize(9)
+
+      cells.forEach((_, i) => {
+        pdf.rect(x, y, widths[i], rowHeight)
+        pdf.text(cellLines[i], x + 1, y + 4)
+        x += widths[i]
+      })
+      y += rowHeight
+    }
+
+    drawRow(headers, true)
+    rows.forEach((r) => drawRow(r, false))
+    y += 3
+  }
+
+  line(title, 16, true)
+  divider()
 
   return {
-    gift,
-    rows: sorted,
-    totalScore,
-    totalConfirmations,
-    avgCompletion,
+    save: (fileName: string) => pdf.save(fileName),
+    kv,
+    section,
+    table,
   }
 }
+
+function exportPersonReportPdf(input: {
+  fileName: string
+  generatedAt: string
+  profile: Profile
+  reliability: string
+  semaphore: string
+  functionalCompletion: number
+  spiritualCompletion: number
+  topFunctional: Array<{ name: string; score: number }>
+  topSpiritual: Array<{ name: string; score: number }>
+  seenByOthers: Array<{ name: string; score: number }>
+  functionalScores: Array<[string, number]>
+  spiritualScores: Array<[string, number]>
+}) {
+  const doc = createPdf("Reporte individual de dones")
+
+  doc.kv("Fecha de generación", input.generatedAt)
+  doc.kv("Nombre", input.profile.full_name)
+  doc.kv("ID", String(input.profile.id))
+  doc.kv("Edad", input.profile.age != null ? String(input.profile.age) : "-")
+  doc.kv("Sexo", input.profile.sex || "-")
+  doc.kv("Iglesia", input.profile.church || "-")
+  doc.kv("Área de servicio", input.profile.service_areas || "-")
+
+  doc.section("Resumen general")
+  doc.kv("Confiabilidad", input.reliability)
+  doc.kv("Semáforo", input.semaphore)
+  doc.kv("Avance funcional", `${Math.round(input.functionalCompletion)}%`)
+  doc.kv("Avance espiritual", `${Math.round(input.spiritualCompletion)}%`)
+
+  doc.section("Top funcional")
+  doc.table(["Don", "Puntaje"], input.topFunctional.map((x) => [x.name, String(x.score)]), [150, 32])
+
+  doc.section("Top espiritual")
+  doc.table(["Don", "Puntaje"], input.topSpiritual.map((x) => [x.name, String(x.score)]), [150, 32])
+
+  doc.section("Dones que otros ven en mí")
+  doc.table(["Don", "Confirmaciones"], input.seenByOthers.map((x) => [x.name, String(x.score)]), [150, 32])
+
+  doc.section("Clasificación funcional completa")
+  doc.table(["Don funcional", "Puntaje"], input.functionalScores.map(([n, s]) => [n, String(s)]), [150, 32])
+
+  doc.section("Clasificación espiritual completa")
+  doc.table(["Don espiritual", "Puntaje"], input.spiritualScores.map(([n, s]) => [n, String(s)]), [150, 32])
+
+  doc.save(input.fileName)
+}
+
+function exportGroupReportPdf(input: {
+  fileName: string
+  generatedAt: string
+  groupName: string
+  members: number
+  completeMembers: number
+  top22: Array<{ name: string; score: number }>
+  confirmations: Array<{ name: string; score: number }>
+  functionalAgg: Array<[string, number]>
+  spiritualAgg: Array<[string, number]>
+}) {
+  const doc = createPdf("Reporte grupal de dones")
+
+  doc.kv("Fecha de generación", input.generatedAt)
+  doc.kv("Grupo", input.groupName)
+  doc.kv("Miembros", String(input.members))
+  doc.kv("Miembros completos", String(input.completeMembers))
+
+  doc.section("Top 22 del grupo")
+  doc.table(["Don", "Puntaje"], input.top22.map((x) => [x.name, String(x.score)]), [150, 32])
+
+  doc.section("Dones más confirmados por terceros")
+  doc.table(["Don", "Confirmaciones"], input.confirmations.map((x) => [x.name, String(x.score)]), [150, 32])
+
+  doc.section("Concentrado funcional")
+  doc.table(["Don funcional", "Puntaje"], input.functionalAgg.map(([n, s]) => [n, String(s)]), [150, 32])
+
+  doc.section("Concentrado espiritual")
+  doc.table(["Don espiritual", "Puntaje"], input.spiritualAgg.map(([n, s]) => [n, String(s)]), [150, 32])
+
+  doc.save(input.fileName)
+}
+
+function exportGiftInGroupPdf(input: {
+  fileName: string
+  generatedAt: string
+  groupName: string
+  gift: string
+  totalScore: number
+  totalConfirmations: number
+  avgCompletion: number
+  rows: Array<{
+    full_name: string
+    id: number
+    score: number
+    confirmations: number
+    completion: number
+    semaphore: string
+  }>
+}) {
+  const doc = createPdf("Reporte por don dentro del grupo")
+
+  doc.kv("Fecha de generación", input.generatedAt)
+  doc.kv("Grupo", input.groupName)
+  doc.kv("Don", input.gift)
+  doc.kv("Puntaje total", String(input.totalScore))
+  doc.kv("Confirmaciones", String(input.totalConfirmations))
+  doc.kv("Promedio completado", `${Math.round(input.avgCompletion)}%`)
+
+  doc.section("Detalle por miembro")
+  doc.table(
+    ["Nombre", "ID", "Puntaje", "Confirm.", "% Compl.", "Semáforo"],
+    input.rows.map((r) => [
+      r.full_name,
+      String(r.id),
+      String(r.score),
+      String(r.confirmations),
+      `${Math.round(r.completion)}%`,
+      r.semaphore,
+    ]),
+    [70, 16, 22, 22, 24, 28],
+  )
+
+  doc.save(input.fileName)
+}
+
+// ---------- local / supabase adapters ----------
 
 function buildLocalAdapter(setState: (state: AppState) => void) {
   return {
@@ -554,7 +517,6 @@ function buildLocalAdapter(setState: (state: AppState) => void) {
     async persist(state: AppState) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
       setState(state)
-      return state
     },
   }
 }
@@ -580,6 +542,7 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
       if (recognitionsRes.error) throw recognitionsRes.error
 
       const evalMap = Object.fromEntries((evaluationsRes.data || []).map((ev) => [ev.profile_id, ev])) as Record<number, Evaluation>
+
       const groups = (groupsRes.data || []).map((g) => ({
         ...g,
         memberIds: (membersRes.data || []).filter((m) => m.group_id === g.id).map((m) => m.profile_id),
@@ -590,8 +553,8 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
         evaluations: evalMap,
         groups,
         peerRecognitions: (recognitionsRes.data || []) as PeerRecognition[],
-        nextProfileId: ((profilesRes.data || []).at(-1)?.id || 0) + 1,
-        nextGroupId: ((groupsRes.data || []).at(-1)?.id || 0) + 1,
+        nextProfileId: (((profilesRes.data || []).at(-1) as Profile | undefined)?.id || 0) + 1,
+        nextGroupId: (((groupsRes.data || []).at(-1) as Group | undefined)?.id || 0) + 1,
       }
 
       setState(nextState)
@@ -611,7 +574,7 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
       if (error) throw error
       if (memberIds.length) {
         const { error: memberError } = await supabase.from("group_members").insert(
-          memberIds.map((profile_id) => ({ group_id: data.id, profile_id })),
+          memberIds.map((profile_id) => ({ group_id: (data as Group).id, profile_id })),
         )
         if (memberError) throw memberError
       }
@@ -651,6 +614,8 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
     },
   }
 }
+
+// ---------- UI helpers ----------
 
 function ScoreSelect({
   value,
@@ -819,6 +784,8 @@ function TopCard({
   )
 }
 
+// ---------- Page ----------
+
 export default function Page() {
   const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
   const envKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
@@ -862,10 +829,6 @@ export default function Page() {
   const [toProfileId, setToProfileId] = useState("")
   const [selectedRecognitionGifts, setSelectedRecognitionGifts] = useState<string[]>([])
 
-  const personReportRef = useRef<HTMLDivElement | null>(null)
-  const groupReportRef = useRef<HTMLDivElement | null>(null)
-  const giftReportRef = useRef<HTMLDivElement | null>(null)
-
   useEffect(() => {
     let mounted = true
 
@@ -885,7 +848,7 @@ export default function Page() {
           })
           return
         } catch {
-          // fallback
+          // fallback to local
         }
       }
 
@@ -932,31 +895,9 @@ export default function Page() {
   const groupReport = selectedGroup ? buildGroupReport(selectedGroup, state.profiles, state.evaluations, state.peerRecognitions) : null
   const giftReport = selectedGroup && selectedGift ? buildGiftInGroupReport(selectedGroup, selectedGift, state.profiles, state.evaluations, state.peerRecognitions) : null
 
-  async function exportRefToPdf(element: HTMLDivElement | null, fileName: string) {
-    if (!element) return
-    const canvas = await html2canvas(element, { scale: 2, backgroundColor: "#ffffff", useCORS: true })
-    const imgData = canvas.toDataURL("image/png")
-    const pdf = new jsPDF("p", "mm", "a4")
-    const pdfWidth = pdf.internal.pageSize.getWidth()
-    const pageHeight = pdf.internal.pageSize.getHeight()
-    const imgWidth = pdfWidth
-    const imgHeight = (canvas.height * imgWidth) / canvas.width
-
-    let heightLeft = imgHeight
-    let position = 0
-
-    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight)
-    heightLeft -= pageHeight
-
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight
-      pdf.addPage()
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight)
-      heightLeft -= pageHeight
-    }
-
-    pdf.save(`${fileName}.pdf`)
-  }
+  const filteredProfiles = profiles.filter((p) =>
+    `${p.full_name} ${p.church || ""} ${p.service_areas || ""}`.toLowerCase().includes(search.toLowerCase()),
+  )
 
   const summary = {
     profiles: profiles.length,
@@ -1049,7 +990,6 @@ export default function Page() {
           },
         },
       })
-
       setSelectedProfileId(String(created.id))
     }
 
@@ -1261,10 +1201,6 @@ export default function Page() {
     flashSaved("Confirmación guardada correctamente")
   }
 
-  const filteredProfiles = profiles.filter((p) =>
-    `${p.full_name} ${p.church || ""} ${p.service_areas || ""}`.toLowerCase().includes(search.toLowerCase()),
-  )
-
   return (
     <div className="min-h-screen bg-slate-50 p-3 md:p-6">
       <div className="mx-auto max-w-7xl space-y-4">
@@ -1272,12 +1208,12 @@ export default function Page() {
           <CardContent className="p-5 md:p-7">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · v7 corregida</div>
+                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · v8</div>
                 <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                   Sistema multiusuario de dones funcionales y espirituales
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  Reportes separados, PDF funcional, botones guardar y control completo de grupos.
+                  PDF estructurado, reportes separados y control completo.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -1627,9 +1563,7 @@ export default function Page() {
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <div className="font-semibold">{group.name}</div>
-                          <div className="text-sm text-slate-500">
-                            {group.memberIds.length} miembros
-                          </div>
+                          <div className="text-sm text-slate-500">{group.memberIds.length} miembros</div>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <Button variant="secondary" onClick={() => { setSelectedGroupId(String(group.id)); setReportMode("grupo"); setActiveTab("reportes") }}>
@@ -1800,13 +1734,24 @@ export default function Page() {
                     </div>
                     <Button
                       variant="outline"
-                      disabled={!selectedProfile}
-                      onClick={() =>
-                        exportRefToPdf(
-                          personReportRef.current,
-                          `Reporte_Persona_${(selectedProfile?.full_name || "persona").replace(/\s+/g, "_")}`,
-                        )
-                      }
+                      disabled={!selectedProfile || !functionalReport || !spiritualReport || !peerSummary}
+                      onClick={() => {
+                        if (!selectedProfile || !functionalReport || !spiritualReport || !peerSummary) return
+                        exportPersonReportPdf({
+                          fileName: `Reporte_Persona_${selectedProfile.full_name.replace(/\s+/g, "_")}.pdf`,
+                          generatedAt: new Date().toLocaleString(),
+                          profile: selectedProfile,
+                          reliability: functionalReport.reliability,
+                          semaphore: functionalReport.semaphore,
+                          functionalCompletion: functionalReport.completionPct * 100,
+                          spiritualCompletion: spiritualReport.completionPct * 100,
+                          topFunctional: functionalReport.top3,
+                          topSpiritual: spiritualReport.top3,
+                          seenByOthers: peerSummary.top.slice(0, 10),
+                          functionalScores: Object.entries(functionalReport.scores).sort((a, b) => b[1] - a[1]),
+                          spiritualScores: Object.entries(spiritualReport.scores).sort((a, b) => b[1] - a[1]),
+                        })
+                      }}
                     >
                       <Download className="mr-2 h-4 w-4" />
                       Exportar PDF
@@ -1815,35 +1760,33 @@ export default function Page() {
                 </Card>
 
                 {selectedProfile && functionalReport && spiritualReport && peerSummary ? (
-                  <div ref={personReportRef}>
-                    <Card className="rounded-3xl">
-                      <CardHeader>
-                        <CardTitle>Reporte de persona · {selectedProfile.full_name}</CardTitle>
-                        <CardDescription>
-                          ID {selectedProfile.id} · {selectedProfile.church || "-"} · {selectedProfile.service_areas || "-"}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-5">
-                        <div className="grid gap-3 md:grid-cols-4">
-                          <Metric label="Confiabilidad" value={functionalReport.reliability} percent={functionalReport.completionPct * 100} />
-                          <Metric label="Semáforo" value={functionalReport.semaphore} percent={functionalReport.maturityPct * 100} />
-                          <Metric label="Funcional" value={`${Math.round(functionalReport.completionPct * 100)}%`} percent={functionalReport.completionPct * 100} />
-                          <Metric label="Espiritual" value={`${Math.round(spiritualReport.completionPct * 100)}%`} percent={spiritualReport.completionPct * 100} />
-                        </div>
+                  <Card className="rounded-3xl">
+                    <CardHeader>
+                      <CardTitle>Reporte de persona · {selectedProfile.full_name}</CardTitle>
+                      <CardDescription>
+                        ID {selectedProfile.id} · {selectedProfile.church || "-"} · {selectedProfile.service_areas || "-"}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                      <div className="grid gap-3 md:grid-cols-4">
+                        <Metric label="Confiabilidad" value={functionalReport.reliability} percent={functionalReport.completionPct * 100} />
+                        <Metric label="Semáforo" value={functionalReport.semaphore} percent={functionalReport.maturityPct * 100} />
+                        <Metric label="Funcional" value={`${Math.round(functionalReport.completionPct * 100)}%`} percent={functionalReport.completionPct * 100} />
+                        <Metric label="Espiritual" value={`${Math.round(spiritualReport.completionPct * 100)}%`} percent={spiritualReport.completionPct * 100} />
+                      </div>
 
-                        <div className="grid gap-4 xl:grid-cols-3">
-                          <TopCard title="Top funcional" items={functionalReport.top3} />
-                          <TopCard title="Top espiritual" items={spiritualReport.top3} />
-                          <TopCard title="Dones que otros ven en mí" items={peerSummary.top.slice(0, 10)} />
-                        </div>
+                      <div className="grid gap-4 xl:grid-cols-3">
+                        <TopCard title="Top funcional" items={functionalReport.top3} />
+                        <TopCard title="Top espiritual" items={spiritualReport.top3} />
+                        <TopCard title="Dones que otros ven en mí" items={peerSummary.top.slice(0, 10)} />
+                      </div>
 
-                        <div className="grid gap-4 xl:grid-cols-2">
-                          <GiftTable title="Clasificación funcional" entries={Object.entries(functionalReport.scores).sort((a, b) => b[1] - a[1])} max={20} />
-                          <GiftTable title="Clasificación espiritual" entries={Object.entries(spiritualReport.scores).sort((a, b) => b[1] - a[1])} max={15} />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        <GiftTable title="Clasificación funcional" entries={Object.entries(functionalReport.scores).sort((a, b) => b[1] - a[1])} max={20} />
+                        <GiftTable title="Clasificación espiritual" entries={Object.entries(spiritualReport.scores).sort((a, b) => b[1] - a[1])} max={15} />
+                      </div>
+                    </CardContent>
+                  </Card>
                 ) : null}
               </TabsContent>
 
@@ -1866,13 +1809,21 @@ export default function Page() {
                     </div>
                     <Button
                       variant="outline"
-                      disabled={!selectedGroup}
-                      onClick={() =>
-                        exportRefToPdf(
-                          groupReportRef.current,
-                          `Reporte_Grupo_${(selectedGroup?.name || "grupo").replace(/\s+/g, "_")}`,
-                        )
-                      }
+                      disabled={!selectedGroup || !groupReport}
+                      onClick={() => {
+                        if (!selectedGroup || !groupReport) return
+                        exportGroupReportPdf({
+                          fileName: `Reporte_Grupo_${selectedGroup.name.replace(/\s+/g, "_")}.pdf`,
+                          generatedAt: new Date().toLocaleString(),
+                          groupName: selectedGroup.name,
+                          members: groupReport.members.length,
+                          completeMembers: groupReport.completeMembers.length,
+                          top22: groupReport.top22,
+                          confirmations: groupReport.topConfirmations,
+                          functionalAgg: Object.entries(groupReport.functionalAgg).sort((a, b) => b[1] - a[1]),
+                          spiritualAgg: Object.entries(groupReport.spiritualAgg).sort((a, b) => b[1] - a[1]),
+                        })
+                      }}
                     >
                       <Download className="mr-2 h-4 w-4" />
                       Exportar PDF
@@ -1881,34 +1832,32 @@ export default function Page() {
                 </Card>
 
                 {selectedGroup && groupReport ? (
-                  <div ref={groupReportRef}>
-                    <Card className="rounded-3xl">
-                      <CardHeader>
-                        <CardTitle>Reporte de grupo · {selectedGroup.name}</CardTitle>
-                        <CardDescription>
-                          {groupReport.members.length} miembros · {groupReport.completeMembers.length} completos
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-5">
-                        <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
-                          <Metric label="Miembros" value={groupReport.members.length} />
-                          <Metric label="Completos" value={groupReport.completeMembers.length} />
-                          <Metric label="Top 1" value={groupReport.top22[0]?.name || "-"} />
-                          <Metric label="Top 2" value={groupReport.top22[1]?.name || "-"} />
-                          <Metric label="Top 3" value={groupReport.top22[2]?.name || "-"} />
-                          <Metric label="Confirmaciones" value={groupReport.topConfirmations[0]?.name || "-"} />
-                        </div>
+                  <Card className="rounded-3xl">
+                    <CardHeader>
+                      <CardTitle>Reporte de grupo · {selectedGroup.name}</CardTitle>
+                      <CardDescription>
+                        {groupReport.members.length} miembros · {groupReport.completeMembers.length} completos
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                      <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
+                        <Metric label="Miembros" value={groupReport.members.length} />
+                        <Metric label="Completos" value={groupReport.completeMembers.length} />
+                        <Metric label="Top 1" value={groupReport.top22[0]?.name || "-"} />
+                        <Metric label="Top 2" value={groupReport.top22[1]?.name || "-"} />
+                        <Metric label="Top 3" value={groupReport.top22[2]?.name || "-"} />
+                        <Metric label="Confirmaciones" value={groupReport.topConfirmations[0]?.name || "-"} />
+                      </div>
 
-                        <div className="grid gap-4 xl:grid-cols-3">
-                          <GiftTable title="Top funcional del grupo" entries={Object.entries(groupReport.functionalAgg).sort((a, b) => b[1] - a[1]).slice(0, 12)} max={Math.max(...Object.values(groupReport.functionalAgg), 1)} />
-                          <GiftTable title="Top espiritual del grupo" entries={Object.entries(groupReport.spiritualAgg).sort((a, b) => b[1] - a[1]).slice(0, 10)} max={Math.max(...Object.values(groupReport.spiritualAgg), 1)} />
-                          <GiftTable title="Top 22 del grupo" entries={groupReport.top22.map((x) => [x.name, x.score])} max={groupReport.top22[0]?.score || 1} />
-                        </div>
+                      <div className="grid gap-4 xl:grid-cols-3">
+                        <GiftTable title="Top funcional del grupo" entries={Object.entries(groupReport.functionalAgg).sort((a, b) => b[1] - a[1]).slice(0, 12)} max={Math.max(...Object.values(groupReport.functionalAgg), 1)} />
+                        <GiftTable title="Top espiritual del grupo" entries={Object.entries(groupReport.spiritualAgg).sort((a, b) => b[1] - a[1]).slice(0, 10)} max={Math.max(...Object.values(groupReport.spiritualAgg), 1)} />
+                        <GiftTable title="Top 22 del grupo" entries={groupReport.top22.map((x) => [x.name, x.score])} max={groupReport.top22[0]?.score || 1} />
+                      </div>
 
-                        <GiftTable title="Dones más confirmados por terceros" entries={groupReport.topConfirmations.map((x) => [x.name, x.score])} max={groupReport.topConfirmations[0]?.score || 1} />
-                      </CardContent>
-                    </Card>
-                  </div>
+                      <GiftTable title="Dones más confirmados por terceros" entries={groupReport.topConfirmations.map((x) => [x.name, x.score])} max={groupReport.topConfirmations[0]?.score || 1} />
+                    </CardContent>
+                  </Card>
                 ) : null}
               </TabsContent>
 
@@ -1946,13 +1895,27 @@ export default function Page() {
                       <Button
                         className="w-full"
                         variant="outline"
-                        disabled={!selectedGroup || !selectedGift}
-                        onClick={() =>
-                          exportRefToPdf(
-                            giftReportRef.current,
-                            `Reporte_Don_${selectedGift.replace(/\s+/g, "_")}_${(selectedGroup?.name || "grupo").replace(/\s+/g, "_")}`,
-                          )
-                        }
+                        disabled={!selectedGroup || !giftReport}
+                        onClick={() => {
+                          if (!selectedGroup || !giftReport) return
+                          exportGiftInGroupPdf({
+                            fileName: `Reporte_Don_${selectedGift.replace(/\s+/g, "_")}_${selectedGroup.name.replace(/\s+/g, "_")}.pdf`,
+                            generatedAt: new Date().toLocaleString(),
+                            groupName: selectedGroup.name,
+                            gift: giftReport.gift,
+                            totalScore: giftReport.totalScore,
+                            totalConfirmations: giftReport.totalConfirmations,
+                            avgCompletion: giftReport.avgCompletion,
+                            rows: giftReport.rows.map((r) => ({
+                              full_name: r.member.full_name,
+                              id: r.member.id,
+                              score: r.score,
+                              confirmations: r.confirmations,
+                              completion: r.completion,
+                              semaphore: r.semaphore,
+                            })),
+                          })
+                        }}
                       >
                         <Download className="mr-2 h-4 w-4" />
                         Exportar PDF
@@ -1962,39 +1925,37 @@ export default function Page() {
                 </Card>
 
                 {giftReport ? (
-                  <div ref={giftReportRef}>
-                    <Card className="rounded-3xl">
-                      <CardHeader>
-                        <CardTitle>Reporte por don · {giftReport.gift}</CardTitle>
-                        <CardDescription>Grupo: {selectedGroup?.name}</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-5">
-                        <div className="grid gap-3 md:grid-cols-3">
-                          <Metric label="Puntaje total del don" value={giftReport.totalScore} />
-                          <Metric label="Confirmaciones del don" value={giftReport.totalConfirmations} />
-                          <Metric label="Promedio completado" value={`${Math.round(giftReport.avgCompletion)}%`} percent={giftReport.avgCompletion} />
-                        </div>
+                  <Card className="rounded-3xl">
+                    <CardHeader>
+                      <CardTitle>Reporte por don · {giftReport.gift}</CardTitle>
+                      <CardDescription>Grupo: {selectedGroup?.name}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <Metric label="Puntaje total del don" value={giftReport.totalScore} />
+                        <Metric label="Confirmaciones del don" value={giftReport.totalConfirmations} />
+                        <Metric label="Promedio completado" value={`${Math.round(giftReport.avgCompletion)}%`} percent={giftReport.avgCompletion} />
+                      </div>
 
-                        <Card className="rounded-2xl">
-                          <CardHeader><CardTitle className="text-base">Miembros del grupo para este don</CardTitle></CardHeader>
-                          <CardContent className="space-y-3">
-                            {giftReport.rows.map((row) => (
-                              <div key={row.member.id} className="grid gap-3 rounded-2xl border p-4 md:grid-cols-6">
-                                <div className="md:col-span-2">
-                                  <div className="font-semibold">{row.member.full_name}</div>
-                                  <div className="text-sm text-slate-500">ID {row.member.id}</div>
-                                </div>
-                                <Metric label="Puntaje" value={row.score} percent={(row.score / (FUNCTIONAL_GIFTS.includes(giftReport.gift as never) ? 20 : 15)) * 100} />
-                                <Metric label="Confirmaciones" value={row.confirmations} />
-                                <Metric label="Completado" value={`${Math.round(row.completion)}%`} percent={row.completion} />
-                                <Metric label="Semáforo" value={row.semaphore} percent={row.completion} />
+                      <Card className="rounded-2xl">
+                        <CardHeader><CardTitle className="text-base">Miembros del grupo para este don</CardTitle></CardHeader>
+                        <CardContent className="space-y-3">
+                          {giftReport.rows.map((row) => (
+                            <div key={row.member.id} className="grid gap-3 rounded-2xl border p-4 md:grid-cols-6">
+                              <div className="md:col-span-2">
+                                <div className="font-semibold">{row.member.full_name}</div>
+                                <div className="text-sm text-slate-500">ID {row.member.id}</div>
                               </div>
-                            ))}
-                          </CardContent>
-                        </Card>
-                      </CardContent>
-                    </Card>
-                  </div>
+                              <Metric label="Puntaje" value={row.score} percent={(row.score / (FUNCTIONAL_GIFTS.includes(giftReport.gift as never) ? 20 : 15)) * 100} />
+                              <Metric label="Confirmaciones" value={row.confirmations} />
+                              <Metric label="Completado" value={`${Math.round(row.completion)}%`} percent={row.completion} />
+                              <Metric label="Semáforo" value={row.semaphore} percent={row.completion} />
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    </CardContent>
+                  </Card>
                 ) : null}
               </TabsContent>
             </Tabs>
