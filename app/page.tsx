@@ -99,7 +99,7 @@ type ConnectionState = {
   message: string
 }
 
-const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v8"
+const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v9"
 
 const FUNCTIONAL_GIFTS = [
   "Enseñanza",
@@ -292,212 +292,227 @@ const SPIRITUAL_QUESTIONS: SpiritualQuestion[] = SPIRITUAL_GIFTS.flatMap((gift, 
   })),
 )
 
-// ---------- PDF helpers ----------
+function buildEmptyState(): AppState {
+  return {
+    profiles: [],
+    evaluations: {},
+    groups: [],
+    peerRecognitions: [],
+    nextProfileId: 1,
+    nextGroupId: 1,
+  }
+}
 
-function createPdf(title: string) {
-  const pdf = new jsPDF("p", "mm", "a4")
-  const pageWidth = 210
-  const pageHeight = 297
-  const margin = 14
-  let y = margin
+function blankFunctionalAnswers(): Record<string, number | ""> {
+  return Object.fromEntries(FUNCTIONAL_QUESTIONS.map((q) => [q.id, ""]))
+}
 
-  const addPageIfNeeded = (needed = 8) => {
-    if (y + needed > pageHeight - margin) {
-      pdf.addPage()
-      y = margin
-    }
+function blankSpiritualAnswers(): Record<string, number | ""> {
+  return Object.fromEntries(SPIRITUAL_QUESTIONS.map((q) => [q.id, ""]))
+}
+
+function topNFromScores(scoreMap: Record<string, number>, n = 3) {
+  return Object.entries(scoreMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([name, score]) => ({ name, score }))
+}
+
+function average(values: number[]) {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
+}
+
+function getReliability(answered: number, total: number) {
+  const pct = total ? answered / total : 0
+  if (pct >= 1) return "Alta"
+  if (pct >= 0.75) return "Media"
+  if (pct > 0) return "Baja"
+  return "Sin datos"
+}
+
+function getSemaphore(pct: number) {
+  if (pct >= 0.8) return "Verde"
+  if (pct >= 0.6) return "Amarillo"
+  if (pct > 0) return "Rojo"
+  return "Sin datos"
+}
+
+function getScoreBgClass(score: number) {
+  if (score >= 5) return "bg-emerald-100 text-emerald-800 border-emerald-200"
+  if (score >= 4) return "bg-lime-100 text-lime-800 border-lime-200"
+  if (score >= 3) return "bg-amber-100 text-amber-800 border-amber-200"
+  if (score >= 2) return "bg-orange-100 text-orange-800 border-orange-200"
+  if (score >= 1) return "bg-rose-100 text-rose-800 border-rose-200"
+  return "bg-white"
+}
+
+function getPercentBgClass(percent: number) {
+  if (percent >= 80) return "bg-emerald-100 text-emerald-800 border-emerald-200"
+  if (percent >= 60) return "bg-lime-100 text-lime-800 border-lime-200"
+  if (percent >= 40) return "bg-amber-100 text-amber-800 border-amber-200"
+  if (percent > 0) return "bg-rose-100 text-rose-800 border-rose-200"
+  return "bg-slate-100 text-slate-600 border-slate-200"
+}
+
+function computeFunctionalEvaluation(raw?: Partial<Evaluation>) {
+  const answers = raw?.functional_answers || {}
+  const scores = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const globalDimensions: Record<FunctionalDimension, number[]> = {
+    inclinacion: [],
+    disfrute: [],
+    confirmacion: [],
+    fruto: [],
   }
 
-  const line = (text: string, size = 10, bold = false) => {
-    addPageIfNeeded(7)
-    pdf.setFont("helvetica", bold ? "bold" : "normal")
-    pdf.setFontSize(size)
-    const lines = pdf.splitTextToSize(text, pageWidth - margin * 2)
-    pdf.text(lines, margin, y)
-    y += lines.length * (size * 0.42 + 1.2)
-  }
+  FUNCTIONAL_QUESTIONS.forEach((q) => {
+    const value = Number(answers[q.id] || 0)
+    scores[q.gift] += value
+    globalDimensions[q.dimension].push(value)
+  })
 
-  const divider = () => {
-    addPageIfNeeded(4)
-    pdf.setDrawColor(180)
-    pdf.line(margin, y, pageWidth - margin, y)
-    y += 4
-  }
-
-  const section = (text: string) => {
-    y += 2
-    line(text, 12, true)
-    y += 1
-  }
-
-  const kv = (label: string, value: string) => {
-    line(`${label}: ${value}`, 10, false)
-  }
-
-  const table = (headers: string[], rows: string[][], colWidths?: number[]) => {
-    const widths =
-      colWidths && colWidths.length === headers.length
-        ? colWidths
-        : headers.map(() => (pageWidth - margin * 2) / headers.length)
-
-    const drawRow = (cells: string[], isHeader = false) => {
-      const cellLines = cells.map((cell, i) => pdf.splitTextToSize(cell || "", widths[i] - 2))
-      const rowHeight = Math.max(...cellLines.map((l) => l.length), 1) * 4 + 2
-      addPageIfNeeded(rowHeight + 2)
-
-      let x = margin
-      pdf.setFont("helvetica", isHeader ? "bold" : "normal")
-      pdf.setFontSize(9)
-
-      cells.forEach((_, i) => {
-        pdf.rect(x, y, widths[i], rowHeight)
-        pdf.text(cellLines[i], x + 1, y + 4)
-        x += widths[i]
-      })
-      y += rowHeight
-    }
-
-    drawRow(headers, true)
-    rows.forEach((r) => drawRow(r, false))
-    y += 3
-  }
-
-  line(title, 16, true)
-  divider()
+  const answered = FUNCTIONAL_QUESTIONS.filter((q) => answers[q.id] !== "" && answers[q.id] != null).length
+  const maturityPct = Object.values(scores).reduce((a, b) => a + b, 0) / (FUNCTIONAL_GIFTS.length * 20)
 
   return {
-    save: (fileName: string) => pdf.save(fileName),
-    kv,
-    section,
-    table,
+    answered,
+    total: FUNCTIONAL_QUESTIONS.length,
+    completionPct: answered / FUNCTIONAL_QUESTIONS.length,
+    reliability: getReliability(answered, FUNCTIONAL_QUESTIONS.length),
+    maturityPct,
+    semaphore: getSemaphore(maturityPct),
+    scores,
+    top3: topNFromScores(scores, 3),
+    globalDimensions: {
+      inclinacion: average(globalDimensions.inclinacion) / 5,
+      disfrute: average(globalDimensions.disfrute) / 5,
+      confirmacion: average(globalDimensions.confirmacion) / 5,
+      fruto: average(globalDimensions.fruto) / 5,
+    },
   }
 }
 
-function exportPersonReportPdf(input: {
-  fileName: string
-  generatedAt: string
-  profile: Profile
-  reliability: string
-  semaphore: string
-  functionalCompletion: number
-  spiritualCompletion: number
-  topFunctional: Array<{ name: string; score: number }>
-  topSpiritual: Array<{ name: string; score: number }>
-  seenByOthers: Array<{ name: string; score: number }>
-  functionalScores: Array<[string, number]>
-  spiritualScores: Array<[string, number]>
-}) {
-  const doc = createPdf("Reporte individual de dones")
+function computeSpiritualEvaluation(raw?: Partial<Evaluation>) {
+  const answers = raw?.spiritual_answers || {}
+  const scores = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const globalDimensions: Record<SpiritualDimension, number[]> = {
+    sensibilidad: [],
+    fruto: [],
+    confirmacion: [],
+  }
 
-  doc.kv("Fecha de generación", input.generatedAt)
-  doc.kv("Nombre", input.profile.full_name)
-  doc.kv("ID", String(input.profile.id))
-  doc.kv("Edad", input.profile.age != null ? String(input.profile.age) : "-")
-  doc.kv("Sexo", input.profile.sex || "-")
-  doc.kv("Iglesia", input.profile.church || "-")
-  doc.kv("Área de servicio", input.profile.service_areas || "-")
+  SPIRITUAL_QUESTIONS.forEach((q) => {
+    const value = Number(answers[q.id] || 0)
+    scores[q.gift] += value
+    globalDimensions[q.dimension].push(value)
+  })
 
-  doc.section("Resumen general")
-  doc.kv("Confiabilidad", input.reliability)
-  doc.kv("Semáforo", input.semaphore)
-  doc.kv("Avance funcional", `${Math.round(input.functionalCompletion)}%`)
-  doc.kv("Avance espiritual", `${Math.round(input.spiritualCompletion)}%`)
+  const answered = SPIRITUAL_QUESTIONS.filter((q) => answers[q.id] !== "" && answers[q.id] != null).length
+  const maturityPct = Object.values(scores).reduce((a, b) => a + b, 0) / (SPIRITUAL_GIFTS.length * 15)
 
-  doc.section("Top funcional")
-  doc.table(["Don", "Puntaje"], input.topFunctional.map((x) => [x.name, String(x.score)]), [150, 32])
-
-  doc.section("Top espiritual")
-  doc.table(["Don", "Puntaje"], input.topSpiritual.map((x) => [x.name, String(x.score)]), [150, 32])
-
-  doc.section("Dones que otros ven en mí")
-  doc.table(["Don", "Confirmaciones"], input.seenByOthers.map((x) => [x.name, String(x.score)]), [150, 32])
-
-  doc.section("Clasificación funcional completa")
-  doc.table(["Don funcional", "Puntaje"], input.functionalScores.map(([n, s]) => [n, String(s)]), [150, 32])
-
-  doc.section("Clasificación espiritual completa")
-  doc.table(["Don espiritual", "Puntaje"], input.spiritualScores.map(([n, s]) => [n, String(s)]), [150, 32])
-
-  doc.save(input.fileName)
+  return {
+    answered,
+    total: SPIRITUAL_QUESTIONS.length,
+    completionPct: answered / SPIRITUAL_QUESTIONS.length,
+    reliability: getReliability(answered, SPIRITUAL_QUESTIONS.length),
+    maturityPct,
+    semaphore: getSemaphore(maturityPct),
+    scores,
+    top3: topNFromScores(scores, 3),
+    globalDimensions: {
+      sensibilidad: average(globalDimensions.sensibilidad) / 5,
+      fruto: average(globalDimensions.fruto) / 5,
+      confirmacion: average(globalDimensions.confirmacion) / 5,
+    },
+  }
 }
 
-function exportGroupReportPdf(input: {
-  fileName: string
-  generatedAt: string
-  groupName: string
-  members: number
-  completeMembers: number
-  top22: Array<{ name: string; score: number }>
-  confirmations: Array<{ name: string; score: number }>
-  functionalAgg: Array<[string, number]>
-  spiritualAgg: Array<[string, number]>
-}) {
-  const doc = createPdf("Reporte grupal de dones")
-
-  doc.kv("Fecha de generación", input.generatedAt)
-  doc.kv("Grupo", input.groupName)
-  doc.kv("Miembros", String(input.members))
-  doc.kv("Miembros completos", String(input.completeMembers))
-
-  doc.section("Top 22 del grupo")
-  doc.table(["Don", "Puntaje"], input.top22.map((x) => [x.name, String(x.score)]), [150, 32])
-
-  doc.section("Dones más confirmados por terceros")
-  doc.table(["Don", "Confirmaciones"], input.confirmations.map((x) => [x.name, String(x.score)]), [150, 32])
-
-  doc.section("Concentrado funcional")
-  doc.table(["Don funcional", "Puntaje"], input.functionalAgg.map(([n, s]) => [n, String(s)]), [150, 32])
-
-  doc.section("Concentrado espiritual")
-  doc.table(["Don espiritual", "Puntaje"], input.spiritualAgg.map(([n, s]) => [n, String(s)]), [150, 32])
-
-  doc.save(input.fileName)
+function recognitionSummaryForUser(userId: number, recognitions: PeerRecognition[]) {
+  const rows = recognitions.filter((r) => r.to_profile_id === userId)
+  const counts = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  rows.forEach((r) => r.gifts.forEach((gift) => (counts[gift] += 1)))
+  return {
+    totalRecognizers: [...new Set(rows.map((r) => r.from_profile_id))].length,
+    counts,
+    top: topNFromScores(counts, 22),
+  }
 }
 
-function exportGiftInGroupPdf(input: {
-  fileName: string
-  generatedAt: string
-  groupName: string
-  gift: string
-  totalScore: number
-  totalConfirmations: number
-  avgCompletion: number
-  rows: Array<{
-    full_name: string
-    id: number
-    score: number
-    confirmations: number
-    completion: number
-    semaphore: string
-  }>
-}) {
-  const doc = createPdf("Reporte por don dentro del grupo")
+function buildGroupReport(group: Group, profiles: Profile[], evaluations: Record<number, Evaluation>, recognitions: PeerRecognition[]) {
+  const members = profiles.filter((p) => group.memberIds.includes(p.id))
+  const completeMembers = members.filter((p) => {
+    const ev = evaluations[p.id] || {}
+    return computeFunctionalEvaluation(ev).answered === 48 && computeSpiritualEvaluation(ev).answered === 30
+  })
 
-  doc.kv("Fecha de generación", input.generatedAt)
-  doc.kv("Grupo", input.groupName)
-  doc.kv("Don", input.gift)
-  doc.kv("Puntaje total", String(input.totalScore))
-  doc.kv("Confirmaciones", String(input.totalConfirmations))
-  doc.kv("Promedio completado", `${Math.round(input.avgCompletion)}%`)
+  const functionalAgg = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const spiritualAgg = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const allAgg = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const confirmations = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
 
-  doc.section("Detalle por miembro")
-  doc.table(
-    ["Nombre", "ID", "Puntaje", "Confirm.", "% Compl.", "Semáforo"],
-    input.rows.map((r) => [
-      r.full_name,
-      String(r.id),
-      String(r.score),
-      String(r.confirmations),
-      `${Math.round(r.completion)}%`,
-      r.semaphore,
-    ]),
-    [70, 16, 22, 22, 24, 28],
-  )
+  completeMembers.forEach((member) => {
+    const ev = evaluations[member.id] || {}
+    const f = computeFunctionalEvaluation(ev)
+    const s = computeSpiritualEvaluation(ev)
 
-  doc.save(input.fileName)
+    Object.entries(f.scores).forEach(([gift, score]) => {
+      functionalAgg[gift] += score
+      allAgg[gift] += score
+    })
+    Object.entries(s.scores).forEach(([gift, score]) => {
+      spiritualAgg[gift] += score
+      allAgg[gift] += score
+    })
+  })
+
+  recognitions
+    .filter((r) => group.memberIds.includes(r.to_profile_id))
+    .forEach((r) => r.gifts.forEach((gift) => (confirmations[gift] += 1)))
+
+  return {
+    members,
+    completeMembers,
+    functionalAgg,
+    spiritualAgg,
+    allAgg,
+    confirmations,
+    top22: topNFromScores(allAgg, 22),
+    topConfirmations: topNFromScores(confirmations, 22),
+  }
 }
 
-// ---------- local / supabase adapters ----------
+function buildGiftInGroupReport(group: Group, gift: string, profiles: Profile[], evaluations: Record<number, Evaluation>, recognitions: PeerRecognition[]) {
+  const members = profiles.filter((p) => group.memberIds.includes(p.id))
+  const rows = members.map((member) => {
+    const ev = evaluations[member.id] || {}
+    const f = computeFunctionalEvaluation(ev)
+    const s = computeSpiritualEvaluation(ev)
+    const score = gift in f.scores ? f.scores[gift] : gift in s.scores ? s.scores[gift] : 0
+    const seen = recognitions
+      .filter((r) => r.to_profile_id === member.id)
+      .reduce((acc, r) => acc + r.gifts.filter((g) => g === gift).length, 0)
+
+    return {
+      member,
+      score,
+      confirmations: seen,
+      completion: ((f.answered / 48) * 100 + (s.answered / 30) * 100) / 2,
+      semaphore: f.semaphore,
+    }
+  })
+
+  const sorted = [...rows].sort((a, b) => b.score - a.score)
+  const totalScore = rows.reduce((a, b) => a + b.score, 0)
+  const totalConfirmations = rows.reduce((a, b) => a + b.confirmations, 0)
+  const avgCompletion = rows.length ? rows.reduce((a, b) => a + b.completion, 0) / rows.length : 0
+
+  return {
+    gift,
+    rows: sorted,
+    totalScore,
+    totalConfirmations,
+    avgCompletion,
+  }
+}
 
 function buildLocalAdapter(setState: (state: AppState) => void) {
   return {
@@ -615,7 +630,200 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
   }
 }
 
-// ---------- UI helpers ----------
+function createPdf(title: string) {
+  const pdf = new jsPDF("p", "mm", "a4")
+  const pageWidth = 210
+  const pageHeight = 297
+  const margin = 14
+  let y = margin
+
+  const addPageIfNeeded = (needed = 8) => {
+    if (y + needed > pageHeight - margin) {
+      pdf.addPage()
+      y = margin
+    }
+  }
+
+  const line = (text: string, size = 10, bold = false) => {
+    addPageIfNeeded(7)
+    pdf.setFont("helvetica", bold ? "bold" : "normal")
+    pdf.setFontSize(size)
+    const lines = pdf.splitTextToSize(text, pageWidth - margin * 2)
+    pdf.text(lines, margin, y)
+    y += lines.length * (size * 0.42 + 1.2)
+  }
+
+  const divider = () => {
+    addPageIfNeeded(4)
+    pdf.setDrawColor(180)
+    pdf.line(margin, y, pageWidth - margin, y)
+    y += 4
+  }
+
+  const section = (text: string) => {
+    y += 2
+    line(text, 12, true)
+    y += 1
+  }
+
+  const kv = (label: string, value: string) => {
+    line(`${label}: ${value}`, 10, false)
+  }
+
+  const table = (headers: string[], rows: string[][], colWidths?: number[]) => {
+    const widths =
+      colWidths && colWidths.length === headers.length
+        ? colWidths
+        : headers.map(() => (pageWidth - margin * 2) / headers.length)
+
+    const drawRow = (cells: string[], isHeader = false) => {
+      const cellLines = cells.map((cell, i) => pdf.splitTextToSize(cell || "", widths[i] - 2))
+      const rowHeight = Math.max(...cellLines.map((l) => l.length), 1) * 4 + 2
+      addPageIfNeeded(rowHeight + 2)
+
+      let x = margin
+      pdf.setFont("helvetica", isHeader ? "bold" : "normal")
+      pdf.setFontSize(9)
+
+      cells.forEach((_, i) => {
+        pdf.rect(x, y, widths[i], rowHeight)
+        pdf.text(cellLines[i], x + 1, y + 4)
+        x += widths[i]
+      })
+      y += rowHeight + 1
+    }
+
+    drawRow(headers, true)
+    rows.forEach((r) => drawRow(r, false))
+    y += 3
+  }
+
+  line(title, 16, true)
+  divider()
+
+  return { pdf, save: (fileName: string) => pdf.save(fileName), kv, section, table }
+}
+
+function exportPersonReportPdf(input: {
+  fileName: string
+  generatedAt: string
+  profile: Profile
+  reliability: string
+  semaphore: string
+  functionalCompletion: number
+  spiritualCompletion: number
+  topFunctional: Array<{ name: string; score: number }>
+  topSpiritual: Array<{ name: string; score: number }>
+  seenByOthers: Array<{ name: string; score: number }>
+  functionalScores: Array<[string, number]>
+  spiritualScores: Array<[string, number]>
+}) {
+  const doc = createPdf("Reporte individual de dones")
+  doc.kv("Fecha de generación", input.generatedAt)
+  doc.kv("Nombre", input.profile.full_name)
+  doc.kv("ID", String(input.profile.id))
+  doc.kv("Edad", input.profile.age != null ? String(input.profile.age) : "-")
+  doc.kv("Sexo", input.profile.sex || "-")
+  doc.kv("Iglesia", input.profile.church || "-")
+  doc.kv("Área de servicio", input.profile.service_areas || "-")
+
+  doc.section("Resumen general")
+  doc.kv("Confiabilidad", input.reliability)
+  doc.kv("Semáforo", input.semaphore)
+  doc.kv("Avance funcional", `${Math.round(input.functionalCompletion)}%`)
+  doc.kv("Avance espiritual", `${Math.round(input.spiritualCompletion)}%`)
+
+  doc.section("Top funcional")
+  doc.table(["Don", "Puntaje"], input.topFunctional.map((x) => [x.name, String(x.score)]), [150, 32])
+
+  doc.section("Top espiritual")
+  doc.table(["Don", "Puntaje"], input.topSpiritual.map((x) => [x.name, String(x.score)]), [150, 32])
+
+  doc.section("Dones que otros ven en mí")
+  doc.table(["Don", "Confirmaciones"], input.seenByOthers.map((x) => [x.name, String(x.score)]), [150, 32])
+
+  doc.section("Clasificación funcional completa")
+  doc.table(["Don funcional", "Puntaje"], input.functionalScores.map(([n, s]) => [n, String(s)]), [150, 32])
+
+  doc.section("Clasificación espiritual completa")
+  doc.table(["Don espiritual", "Puntaje"], input.spiritualScores.map(([n, s]) => [n, String(s)]), [150, 32])
+
+  doc.save(input.fileName)
+}
+
+function exportGroupReportPdf(input: {
+  fileName: string
+  generatedAt: string
+  groupName: string
+  members: number
+  completeMembers: number
+  top22: Array<{ name: string; score: number }>
+  confirmations: Array<{ name: string; score: number }>
+  functionalAgg: Array<[string, number]>
+  spiritualAgg: Array<[string, number]>
+}) {
+  const doc = createPdf("Reporte grupal de dones")
+  doc.kv("Fecha de generación", input.generatedAt)
+  doc.kv("Grupo", input.groupName)
+  doc.kv("Miembros", String(input.members))
+  doc.kv("Miembros completos", String(input.completeMembers))
+
+  doc.section("Top 22 del grupo")
+  doc.table(["Don", "Puntaje"], input.top22.map((x) => [x.name, String(x.score)]), [150, 32])
+
+  doc.section("Dones más confirmados por terceros")
+  doc.table(["Don", "Confirmaciones"], input.confirmations.map((x) => [x.name, String(x.score)]), [150, 32])
+
+  doc.section("Concentrado funcional")
+  doc.table(["Don funcional", "Puntaje"], input.functionalAgg.map(([n, s]) => [n, String(s)]), [150, 32])
+
+  doc.section("Concentrado espiritual")
+  doc.table(["Don espiritual", "Puntaje"], input.spiritualAgg.map(([n, s]) => [n, String(s)]), [150, 32])
+
+  doc.save(input.fileName)
+}
+
+function exportGiftInGroupPdf(input: {
+  fileName: string
+  generatedAt: string
+  groupName: string
+  gift: string
+  totalScore: number
+  totalConfirmations: number
+  avgCompletion: number
+  rows: Array<{
+    full_name: string
+    id: number
+    score: number
+    confirmations: number
+    completion: number
+    semaphore: string
+  }>
+}) {
+  const doc = createPdf("Reporte por don dentro del grupo")
+  doc.kv("Fecha de generación", input.generatedAt)
+  doc.kv("Grupo", input.groupName)
+  doc.kv("Don", input.gift)
+  doc.kv("Puntaje total", String(input.totalScore))
+  doc.kv("Confirmaciones", String(input.totalConfirmations))
+  doc.kv("Promedio completado", `${Math.round(input.avgCompletion)}%`)
+
+  doc.section("Detalle por miembro")
+  doc.table(
+    ["Nombre", "ID", "Puntaje", "Confirm.", "% Compl.", "Semáforo"],
+    input.rows.map((r) => [
+      r.full_name,
+      String(r.id),
+      String(r.score),
+      String(r.confirmations),
+      `${Math.round(r.completion)}%`,
+      r.semaphore,
+    ]),
+    [70, 16, 22, 22, 24, 28],
+  )
+
+  doc.save(input.fileName)
+}
 
 function ScoreSelect({
   value,
@@ -784,8 +992,6 @@ function TopCard({
   )
 }
 
-// ---------- Page ----------
-
 export default function Page() {
   const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
   const envKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
@@ -848,7 +1054,7 @@ export default function Page() {
           })
           return
         } catch {
-          // fallback to local
+          // fallback
         }
       }
 
@@ -1208,7 +1414,7 @@ export default function Page() {
           <CardContent className="p-5 md:p-7">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · v8</div>
+                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · v9</div>
                 <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                   Sistema multiusuario de dones funcionales y espirituales
                 </h1>
@@ -1751,6 +1957,7 @@ export default function Page() {
                           functionalScores: Object.entries(functionalReport.scores).sort((a, b) => b[1] - a[1]),
                           spiritualScores: Object.entries(spiritualReport.scores).sort((a, b) => b[1] - a[1]),
                         })
+                        flashSaved("PDF individual generado correctamente")
                       }}
                     >
                       <Download className="mr-2 h-4 w-4" />
@@ -1823,6 +2030,7 @@ export default function Page() {
                           functionalAgg: Object.entries(groupReport.functionalAgg).sort((a, b) => b[1] - a[1]),
                           spiritualAgg: Object.entries(groupReport.spiritualAgg).sort((a, b) => b[1] - a[1]),
                         })
+                        flashSaved("PDF grupal generado correctamente")
                       }}
                     >
                       <Download className="mr-2 h-4 w-4" />
@@ -1915,6 +2123,7 @@ export default function Page() {
                               semaphore: r.semaphore,
                             })),
                           })
+                          flashSaved("PDF por don generado correctamente")
                         }}
                       >
                         <Download className="mr-2 h-4 w-4" />
