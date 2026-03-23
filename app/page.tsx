@@ -15,7 +15,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Progress } from "@/components/ui/progress"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   ArrowLeft,
@@ -24,7 +23,6 @@ import {
   Cloud,
   Database,
   Download,
-  FileText,
   Layers3,
   Pencil,
   Save,
@@ -102,6 +100,8 @@ type ConnectionState = {
   mode: "local" | "supabase"
   message: string
 }
+
+type ReportMode = "persona" | "grupo" | "don"
 
 const FUNCTIONAL_GIFTS = [
   "Enseñanza",
@@ -294,8 +294,6 @@ const SPIRITUAL_QUESTIONS: SpiritualQuestion[] = SPIRITUAL_GIFTS.flatMap((gift, 
   })),
 )
 
-const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v6"
-
 function buildEmptyState(): AppState {
   return {
     profiles: [],
@@ -315,10 +313,6 @@ function blankSpiritualAnswers(): Record<string, number | ""> {
   return Object.fromEntries(SPIRITUAL_QUESTIONS.map((q) => [q.id, ""]))
 }
 
-function average(values: number[]) {
-  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
-}
-
 function topNFromScores(scoreMap: Record<string, number>, n = 3) {
   return Object.entries(scoreMap)
     .sort((a, b) => b[1] - a[1])
@@ -326,20 +320,8 @@ function topNFromScores(scoreMap: Record<string, number>, n = 3) {
     .map(([name, score]) => ({ name, score }))
 }
 
-function getScoreLabel(score: number, max: number) {
-  const pct = max > 0 ? score / max : 0
-  if (pct >= 0.8) return "Muy fuerte"
-  if (pct >= 0.65) return "Fuerte"
-  if (pct >= 0.5) return "Consistente"
-  if (pct >= 0.3) return "En desarrollo"
-  return "Bajo"
-}
-
-function getSemaphore(pct: number) {
-  if (pct >= 0.8) return "Verde"
-  if (pct >= 0.6) return "Amarillo"
-  if (pct > 0) return "Rojo"
-  return "Sin datos"
+function average(values: number[]) {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
 }
 
 function getReliability(answered: number, total: number) {
@@ -350,13 +332,20 @@ function getReliability(answered: number, total: number) {
   return "Sin datos"
 }
 
+function getSemaphore(pct: number) {
+  if (pct >= 0.8) return "Verde"
+  if (pct >= 0.6) return "Amarillo"
+  if (pct > 0) return "Rojo"
+  return "Sin datos"
+}
+
 function getScoreBgClass(score: number) {
   if (score >= 5) return "bg-emerald-100 text-emerald-800 border-emerald-200"
   if (score >= 4) return "bg-lime-100 text-lime-800 border-lime-200"
   if (score >= 3) return "bg-amber-100 text-amber-800 border-amber-200"
   if (score >= 2) return "bg-orange-100 text-orange-800 border-orange-200"
   if (score >= 1) return "bg-rose-100 text-rose-800 border-rose-200"
-  return "bg-slate-100 text-slate-600 border-slate-200"
+  return "bg-white"
 }
 
 function getPercentBgClass(percent: number) {
@@ -370,18 +359,6 @@ function getPercentBgClass(percent: number) {
 function computeFunctionalEvaluation(raw?: Partial<Evaluation>) {
   const answers = raw?.functional_answers || {}
   const scores = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  const dimensionsByGift = Object.fromEntries(
-    FUNCTIONAL_GIFTS.map((g) => [
-      g,
-      {
-        inclinacion: 0,
-        disfrute: 0,
-        confirmacion: 0,
-        fruto: 0,
-      },
-    ]),
-  ) as Record<string, Record<FunctionalDimension, number>>
-
   const globalDimensions: Record<FunctionalDimension, number[]> = {
     inclinacion: [],
     disfrute: [],
@@ -392,7 +369,6 @@ function computeFunctionalEvaluation(raw?: Partial<Evaluation>) {
   FUNCTIONAL_QUESTIONS.forEach((q) => {
     const value = Number(answers[q.id] || 0)
     scores[q.gift] += value
-    dimensionsByGift[q.gift][q.dimension] += value
     globalDimensions[q.dimension].push(value)
   })
 
@@ -408,7 +384,6 @@ function computeFunctionalEvaluation(raw?: Partial<Evaluation>) {
     semaphore: getSemaphore(maturityPct),
     scores,
     top3: topNFromScores(scores, 3),
-    dimensionsByGift,
     globalDimensions: {
       inclinacion: average(globalDimensions.inclinacion) / 5,
       disfrute: average(globalDimensions.disfrute) / 5,
@@ -421,18 +396,6 @@ function computeFunctionalEvaluation(raw?: Partial<Evaluation>) {
 function computeSpiritualEvaluation(raw?: Partial<Evaluation>) {
   const answers = raw?.spiritual_answers || {}
   const scores = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-
-  const dimensionsByGift = Object.fromEntries(
-    SPIRITUAL_GIFTS.map((g) => [
-      g,
-      {
-        sensibilidad: 0,
-        fruto: 0,
-        confirmacion: 0,
-      },
-    ]),
-  ) as Record<string, Record<SpiritualDimension, number>>
-
   const globalDimensions: Record<SpiritualDimension, number[]> = {
     sensibilidad: [],
     fruto: [],
@@ -442,7 +405,6 @@ function computeSpiritualEvaluation(raw?: Partial<Evaluation>) {
   SPIRITUAL_QUESTIONS.forEach((q) => {
     const value = Number(answers[q.id] || 0)
     scores[q.gift] += value
-    dimensionsByGift[q.gift][q.dimension] += value
     globalDimensions[q.dimension].push(value)
   })
 
@@ -458,7 +420,6 @@ function computeSpiritualEvaluation(raw?: Partial<Evaluation>) {
     semaphore: getSemaphore(maturityPct),
     scores,
     top3: topNFromScores(scores, 3),
-    dimensionsByGift,
     globalDimensions: {
       sensibilidad: average(globalDimensions.sensibilidad) / 5,
       fruto: average(globalDimensions.fruto) / 5,
@@ -468,15 +429,9 @@ function computeSpiritualEvaluation(raw?: Partial<Evaluation>) {
 }
 
 function recognitionSummaryForUser(userId: number, recognitions: PeerRecognition[]) {
-  const rows = recognitions.filter((r) => Number(r.to_profile_id) === Number(userId))
+  const rows = recognitions.filter((r) => r.to_profile_id === userId)
   const counts = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-
-  rows.forEach((r) => {
-    ;(r.gifts || []).forEach((gift) => {
-      counts[gift] = (counts[gift] || 0) + 1
-    })
-  })
-
+  rows.forEach((r) => r.gifts.forEach((gift) => (counts[gift] += 1)))
   return {
     totalRecognizers: [...new Set(rows.map((r) => r.from_profile_id))].length,
     counts,
@@ -484,12 +439,7 @@ function recognitionSummaryForUser(userId: number, recognitions: PeerRecognition
   }
 }
 
-function buildGroupReport(
-  group: Group,
-  profiles: Profile[],
-  evaluations: Record<number, Evaluation>,
-  recognitions: PeerRecognition[],
-) {
+function buildGroupReport(group: Group, profiles: Profile[], evaluations: Record<number, Evaluation>, recognitions: PeerRecognition[]) {
   const members = profiles.filter((p) => group.memberIds.includes(p.id))
   const completeMembers = members.filter((p) => {
     const ev = evaluations[p.id] || {}
@@ -500,47 +450,32 @@ function buildGroupReport(
   const spiritualAgg = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
   const allAgg = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
   const confirmations = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  const reliabilities: Record<string, number> = { Alta: 0, Media: 0, Baja: 0, "Sin datos": 0 }
-  const semaphores: Record<string, number> = { Verde: 0, Amarillo: 0, Rojo: 0, "Sin datos": 0 }
 
   const functionalGlobal = { inclinacion: 0, disfrute: 0, confirmacion: 0, fruto: 0 }
-  const spiritualGlobal = { sensibilidad: 0, fruto: 0, confirmacion: 0 }
 
   completeMembers.forEach((member) => {
-    const evaluation = evaluations[member.id] || {}
-    const functional = computeFunctionalEvaluation(evaluation)
-    const spiritual = computeSpiritualEvaluation(evaluation)
+    const ev = evaluations[member.id] || {}
+    const f = computeFunctionalEvaluation(ev)
+    const s = computeSpiritualEvaluation(ev)
 
-    Object.entries(functional.scores).forEach(([gift, score]) => {
+    Object.entries(f.scores).forEach(([gift, score]) => {
       functionalAgg[gift] += score
       allAgg[gift] += score
     })
-
-    Object.entries(spiritual.scores).forEach(([gift, score]) => {
+    Object.entries(s.scores).forEach(([gift, score]) => {
       spiritualAgg[gift] += score
       allAgg[gift] += score
     })
 
-    reliabilities[functional.reliability] = (reliabilities[functional.reliability] || 0) + 1
-    semaphores[functional.semaphore] = (semaphores[functional.semaphore] || 0) + 1
-
-    functionalGlobal.inclinacion += functional.globalDimensions.inclinacion
-    functionalGlobal.disfrute += functional.globalDimensions.disfrute
-    functionalGlobal.confirmacion += functional.globalDimensions.confirmacion
-    functionalGlobal.fruto += functional.globalDimensions.fruto
-
-    spiritualGlobal.sensibilidad += spiritual.globalDimensions.sensibilidad
-    spiritualGlobal.fruto += spiritual.globalDimensions.fruto
-    spiritualGlobal.confirmacion += spiritual.globalDimensions.confirmacion
+    functionalGlobal.inclinacion += f.globalDimensions.inclinacion
+    functionalGlobal.disfrute += f.globalDimensions.disfrute
+    functionalGlobal.confirmacion += f.globalDimensions.confirmacion
+    functionalGlobal.fruto += f.globalDimensions.fruto
   })
 
   recognitions
     .filter((r) => group.memberIds.includes(r.to_profile_id))
-    .forEach((r) => {
-      ;(r.gifts || []).forEach((gift) => {
-        confirmations[gift] = (confirmations[gift] || 0) + 1
-      })
-    })
+    .forEach((r) => r.gifts.forEach((gift) => (confirmations[gift] += 1)))
 
   const divisor = completeMembers.length || 1
 
@@ -551,8 +486,6 @@ function buildGroupReport(
     spiritualAgg,
     allAgg,
     confirmations,
-    reliabilities,
-    semaphores,
     top22: topNFromScores(allAgg, 22),
     topConfirmations: topNFromScores(confirmations, 22),
     functionalDimensionsAvg: {
@@ -561,54 +494,43 @@ function buildGroupReport(
       confirmacion: functionalGlobal.confirmacion / divisor,
       fruto: functionalGlobal.fruto / divisor,
     },
-    spiritualDimensionsAvg: {
-      sensibilidad: spiritualGlobal.sensibilidad / divisor,
-      fruto: spiritualGlobal.fruto / divisor,
-      confirmacion: spiritualGlobal.confirmacion / divisor,
-    },
   }
 }
 
-function buildConcentratedReports(
-  profiles: Profile[],
-  evaluations: Record<number, Evaluation>,
-  recognitions: PeerRecognition[],
-) {
-  const completedProfiles = profiles.filter((p) => {
-    const ev = evaluations[p.id] || {}
-    return computeFunctionalEvaluation(ev).answered === 48 && computeSpiritualEvaluation(ev).answered === 30
+function buildGiftInGroupReport(group: Group, gift: string, profiles: Profile[], evaluations: Record<number, Evaluation>, recognitions: PeerRecognition[]) {
+  const members = profiles.filter((p) => group.memberIds.includes(p.id))
+  const rows = members.map((member) => {
+    const ev = evaluations[member.id] || {}
+    const f = computeFunctionalEvaluation(ev)
+    const s = computeSpiritualEvaluation(ev)
+    const score =
+      gift in f.scores ? f.scores[gift] : gift in s.scores ? s.scores[gift] : 0
+    const seen = recognitions
+      .filter((r) => r.to_profile_id === member.id)
+      .reduce((acc, r) => acc + r.gifts.filter((g) => g === gift).length, 0)
+
+    return {
+      member,
+      score,
+      confirmations: seen,
+      completion:
+        ((f.answered / 48) * 100 + (s.answered / 30) * 100) / 2,
+      reliability: f.reliability,
+      semaphore: f.semaphore,
+    }
   })
 
-  const functionalTotals = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  const spiritualTotals = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  const allTotals = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-  const recognitionsTotals = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
-
-  completedProfiles.forEach((profile) => {
-    const ev = evaluations[profile.id] || {}
-    const functional = computeFunctionalEvaluation(ev)
-    const spiritual = computeSpiritualEvaluation(ev)
-    Object.entries(functional.scores).forEach(([gift, score]) => {
-      functionalTotals[gift] += score
-      allTotals[gift] += score
-    })
-    Object.entries(spiritual.scores).forEach(([gift, score]) => {
-      spiritualTotals[gift] += score
-      allTotals[gift] += score
-    })
-  })
-
-  recognitions.forEach((r) => {
-    ;(r.gifts || []).forEach((gift) => {
-      recognitionsTotals[gift] += 1
-    })
-  })
+  const sorted = [...rows].sort((a, b) => b.score - a.score)
+  const totalScore = rows.reduce((a, b) => a + b.score, 0)
+  const totalConfirmations = rows.reduce((a, b) => a + b.confirmations, 0)
+  const avgCompletion = rows.length ? rows.reduce((a, b) => a + b.completion, 0) / rows.length : 0
 
   return {
-    functionalTop: topNFromScores(functionalTotals, FUNCTIONAL_GIFTS.length),
-    spiritualTop: topNFromScores(spiritualTotals, SPIRITUAL_GIFTS.length),
-    allTop: topNFromScores(allTotals, 22),
-    recognitionsTop: topNFromScores(recognitionsTotals, 22),
+    gift,
+    rows: sorted,
+    totalScore,
+    totalConfirmations,
+    avgCompletion,
   }
 }
 
@@ -656,7 +578,6 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
       if (recognitionsRes.error) throw recognitionsRes.error
 
       const evalMap = Object.fromEntries((evaluationsRes.data || []).map((ev) => [ev.profile_id, ev])) as Record<number, Evaluation>
-
       const groups = (groupsRes.data || []).map((g) => ({
         ...g,
         memberIds: (membersRes.data || []).filter((m) => m.group_id === g.id).map((m) => m.profile_id),
@@ -686,23 +607,19 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
     async createGroup(name: string, memberIds: number[]) {
       const { data, error } = await supabase.from("groups").insert({ name }).select().single()
       if (error) throw error
-
       if (memberIds.length) {
         const { error: memberError } = await supabase.from("group_members").insert(
           memberIds.map((profile_id) => ({ group_id: data.id, profile_id })),
         )
         if (memberError) throw memberError
       }
-
       return { ...(data as Group), memberIds }
     },
     async updateGroup(groupId: number, name: string, memberIds: number[]) {
       const { error } = await supabase.from("groups").update({ name }).eq("id", groupId)
       if (error) throw error
-
       const del = await supabase.from("group_members").delete().eq("group_id", groupId)
       if (del.error) throw del.error
-
       if (memberIds.length) {
         const { error: memberError } = await supabase.from("group_members").insert(
           memberIds.map((profile_id) => ({ group_id: groupId, profile_id })),
@@ -711,31 +628,22 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
       }
     },
     async deleteGroup(groupId: number) {
-      const delMembers = await supabase.from("group_members").delete().eq("group_id", groupId)
-      if (delMembers.error) throw delMembers.error
-      const delGroup = await supabase.from("groups").delete().eq("id", groupId)
-      if (delGroup.error) throw delGroup.error
+      await supabase.from("group_members").delete().eq("group_id", groupId)
+      await supabase.from("groups").delete().eq("id", groupId)
     },
     async deleteProfile(profileId: number) {
-      const delRecognitions1 = await supabase.from("peer_recognitions").delete().eq("from_profile_id", profileId)
-      if (delRecognitions1.error) throw delRecognitions1.error
-      const delRecognitions2 = await supabase.from("peer_recognitions").delete().eq("to_profile_id", profileId)
-      if (delRecognitions2.error) throw delRecognitions2.error
-      const delMembers = await supabase.from("group_members").delete().eq("profile_id", profileId)
-      if (delMembers.error) throw delMembers.error
-      const delEval = await supabase.from("evaluations").delete().eq("profile_id", profileId)
-      if (delEval.error) throw delEval.error
-      const delProfile = await supabase.from("profiles").delete().eq("id", profileId)
-      if (delProfile.error) throw delProfile.error
+      await supabase.from("peer_recognitions").delete().eq("from_profile_id", profileId)
+      await supabase.from("peer_recognitions").delete().eq("to_profile_id", profileId)
+      await supabase.from("group_members").delete().eq("profile_id", profileId)
+      await supabase.from("evaluations").delete().eq("profile_id", profileId)
+      await supabase.from("profiles").delete().eq("id", profileId)
     },
     async replaceRecognition(payload: Omit<PeerRecognition, "id">) {
-      const del = await supabase
+      await supabase
         .from("peer_recognitions")
         .delete()
         .eq("from_profile_id", payload.from_profile_id)
         .eq("to_profile_id", payload.to_profile_id)
-
-      if (del.error) throw del.error
       const { error } = await supabase.from("peer_recognitions").insert(payload)
       if (error) throw error
     },
@@ -864,7 +772,7 @@ function GiftTable({
                 <div className="flex items-center justify-between text-sm">
                   <span>{gift}</span>
                   <span className={`rounded-full border px-2 py-0.5 font-medium ${getPercentBgClass(percent)}`}>
-                    {score} · {getScoreLabel(score, max)}
+                    {score}
                   </span>
                 </div>
                 <Progress value={percent} />
@@ -896,7 +804,7 @@ function TopCard({
           items.map((item, idx) => (
             <div key={`${item.name}-${idx}`} className="flex items-center justify-between rounded-xl border p-3 text-sm">
               <span>{item.name}</span>
-              <Badge className={getScoreBgClass(item.score)} variant="outline">
+              <Badge className={getPercentBgClass(item.score * 5)} variant="outline">
                 {item.score}
               </Badge>
             </div>
@@ -917,8 +825,11 @@ export default function Page() {
   const [adapter, setAdapter] = useState<ReturnType<typeof buildLocalAdapter> | ReturnType<typeof buildSupabaseAdapter> | null>(null)
 
   const [activeTab, setActiveTab] = useState("inicio")
+  const [reportMode, setReportMode] = useState<ReportMode>("persona")
+
   const [selectedProfileId, setSelectedProfileId] = useState("")
   const [selectedGroupId, setSelectedGroupId] = useState("")
+  const [selectedGift, setSelectedGift] = useState("")
   const [search, setSearch] = useState("")
 
   const [supabaseUrl, setSupabaseUrl] = useState(envUrl)
@@ -928,6 +839,7 @@ export default function Page() {
     mode: "local",
     message: "Inicializando conexión...",
   })
+  const [saveMessage, setSaveMessage] = useState("")
 
   const [userForm, setUserForm] = useState({
     full_name: "",
@@ -950,6 +862,7 @@ export default function Page() {
 
   const personReportRef = useRef<HTMLDivElement | null>(null)
   const groupReportRef = useRef<HTMLDivElement | null>(null)
+  const giftReportRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -969,8 +882,8 @@ export default function Page() {
             message: "Conectado a Supabase. Multiusuario y persistencia activados.",
           })
           return
-        } catch (error) {
-          console.error("Fallo conexión automática a Supabase:", error)
+        } catch {
+          // ignore and fallback
         }
       }
 
@@ -993,13 +906,14 @@ export default function Page() {
     }
   }, [envUrl, envKey])
 
+  function flashSaved(message: string) {
+    setSaveMessage(message)
+    window.setTimeout(() => setSaveMessage(""), 2500)
+  }
+
   const profiles = useMemo(() => [...state.profiles].sort((a, b) => a.id - b.id), [state.profiles])
   const selectedProfile = profiles.find((p) => String(p.id) === String(selectedProfileId)) || null
   const selectedGroup = state.groups.find((g) => String(g.id) === String(selectedGroupId)) || null
-  const concentrated = useMemo(
-    () => buildConcentratedReports(state.profiles, state.evaluations, state.peerRecognitions),
-    [state.profiles, state.evaluations, state.peerRecognitions],
-  )
 
   const selectedEvaluation =
     selectedProfile
@@ -1014,10 +928,37 @@ export default function Page() {
   const spiritualReport = selectedEvaluation ? computeSpiritualEvaluation(selectedEvaluation) : null
   const peerSummary = selectedProfile ? recognitionSummaryForUser(selectedProfile.id, state.peerRecognitions) : null
   const groupReport = selectedGroup ? buildGroupReport(selectedGroup, state.profiles, state.evaluations, state.peerRecognitions) : null
+  const giftReport = selectedGroup && selectedGift ? buildGiftInGroupReport(selectedGroup, selectedGift, state.profiles, state.evaluations, state.peerRecognitions) : null
 
   const filteredProfiles = profiles.filter((p) =>
     `${p.full_name} ${p.church || ""} ${p.service_areas || ""}`.toLowerCase().includes(search.toLowerCase()),
   )
+
+  async function exportRefToPdf(element: HTMLDivElement | null, fileName: string) {
+    if (!element) return
+    const canvas = await html2canvas(element, { scale: 2, backgroundColor: "#ffffff", useCORS: true })
+    const imgData = canvas.toDataURL("image/png")
+    const pdf = new jsPDF("p", "mm", "a4")
+    const pdfWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const imgWidth = pdfWidth
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+    let heightLeft = imgHeight
+    let position = 0
+
+    pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight)
+    heightLeft -= pageHeight
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight
+      pdf.addPage()
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+    }
+
+    pdf.save(`${fileName}.pdf`)
+  }
 
   const summary = {
     profiles: profiles.length,
@@ -1027,17 +968,6 @@ export default function Page() {
       return computeFunctionalEvaluation(ev).answered === 48 && computeSpiritualEvaluation(ev).answered === 30
     }).length,
     recognitions: state.peerRecognitions.length,
-  }
-
-  async function exportRefToPdf(element: HTMLDivElement | null, fileName: string) {
-    if (!element) return
-    const canvas = await html2canvas(element, { scale: 2, backgroundColor: "#ffffff" })
-    const imgData = canvas.toDataURL("image/png")
-    const pdf = new jsPDF("p", "mm", "a4")
-    const pdfWidth = pdf.internal.pageSize.getWidth()
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight)
-    pdf.save(`${fileName}.pdf`)
   }
 
   async function switchToLocal() {
@@ -1052,39 +982,23 @@ export default function Page() {
   }
 
   async function connectSupabase() {
-    try {
-      if (!supabaseUrl || !supabaseAnonKey) {
-        setConnectionState({
-          connected: false,
-          mode: "supabase",
-          message: "Falta la URL o la anon key de Supabase.",
-        })
-        return
-      }
-
-      const remoteAdapter = buildSupabaseAdapter(supabaseUrl, supabaseAnonKey, setState)
-      await remoteAdapter.init()
-      setAdapter(remoteAdapter)
-      setConnectionState({
-        connected: true,
-        mode: "supabase",
-        message: "Conectado a Supabase. Multiusuario y persistencia activados.",
-      })
-    } catch (error) {
-      setConnectionState({
-        connected: false,
-        mode: "supabase",
-        message: `No se pudo conectar: ${error instanceof Error ? error.message : "Error desconocido"}`,
-      })
-    }
+    if (!supabaseUrl || !supabaseAnonKey) return
+    const remoteAdapter = buildSupabaseAdapter(supabaseUrl, supabaseAnonKey, setState)
+    await remoteAdapter.init()
+    setAdapter(remoteAdapter)
+    setConnectionState({
+      connected: true,
+      mode: "supabase",
+      message: "Conectado a Supabase. Multiusuario y persistencia activados.",
+    })
   }
 
   async function persistLocal(nextState: AppState) {
     if (adapter?.mode === "local") {
       await adapter.persist(nextState)
-      return
+    } else {
+      setState(nextState)
     }
-    setState(nextState)
   }
 
   async function createProfile() {
@@ -1141,18 +1055,20 @@ export default function Page() {
       setSelectedProfileId(String(created.id))
     }
 
-    setUserForm({
-      full_name: "",
-      age: "",
-      sex: "",
-      church: "",
-      service_areas: "",
-    })
-    setActiveTab("usuarios")
+    setUserForm({ full_name: "", age: "", sex: "", church: "", service_areas: "" })
+    flashSaved("Usuario guardado correctamente")
+  }
+
+  async function saveCurrentEvaluation() {
+    if (!selectedProfileId || !selectedEvaluation) return
+    if (adapter?.mode === "supabase") {
+      await adapter.upsertEvaluation(selectedEvaluation)
+    }
+    flashSaved("Evaluación guardada correctamente")
   }
 
   async function deleteProfile(profileId: number) {
-    if (!confirm("¿Eliminar este usuario completo? También se eliminarán su evaluación, relaciones en grupos y confirmaciones.")) return
+    if (!confirm("¿Eliminar este usuario completo?")) return
 
     if (adapter?.mode === "supabase") {
       await adapter.deleteProfile(profileId)
@@ -1180,6 +1096,7 @@ export default function Page() {
 
     if (selectedProfileId === String(profileId)) setSelectedProfileId("")
     await persistLocal(nextState)
+    flashSaved("Usuario eliminado correctamente")
   }
 
   async function updateEvaluation(
@@ -1258,6 +1175,7 @@ export default function Page() {
 
     setGroupName("")
     setGroupMembers([])
+    flashSaved("Grupo guardado correctamente")
   }
 
   function startEditGroup(group: Group) {
@@ -1277,12 +1195,15 @@ export default function Page() {
 
     const nextState = {
       ...state,
-      groups: state.groups.map((g) => (g.id === gid ? { ...g, name: editingGroupName.trim(), memberIds } : g)),
+      groups: state.groups.map((g) =>
+        g.id === gid ? { ...g, name: editingGroupName.trim(), memberIds } : g,
+      ),
     }
     await persistLocal(nextState)
     setEditingGroupId("")
     setEditingGroupName("")
     setEditingGroupMembers([])
+    flashSaved("Grupo actualizado correctamente")
   }
 
   async function deleteGroup(groupId: number) {
@@ -1298,6 +1219,7 @@ export default function Page() {
     }
     if (selectedGroupId === String(groupId)) setSelectedGroupId("")
     await persistLocal(nextState)
+    flashSaved("Grupo eliminado correctamente")
   }
 
   async function saveRecognition() {
@@ -1338,6 +1260,7 @@ export default function Page() {
     }
 
     setSelectedRecognitionGifts([])
+    flashSaved("Confirmación guardada correctamente")
   }
 
   return (
@@ -1347,12 +1270,12 @@ export default function Page() {
           <CardContent className="p-5 md:p-7">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · Control visual profesional</div>
+                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · v7</div>
                 <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                   Sistema multiusuario de dones funcionales y espirituales
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  Con botones de regreso, guardado visible, control de grupos, reportes claros y exportación PDF.
+                  Reportes separados, PDF funcional, botones guardar y control completo de grupos.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -1365,6 +1288,13 @@ export default function Page() {
           </CardContent>
         </Card>
 
+        {saveMessage ? (
+          <Alert>
+            <Save className="h-4 w-4" />
+            <AlertDescription>{saveMessage}</AlertDescription>
+          </Alert>
+        ) : null}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <ScrollArea className="w-full whitespace-nowrap rounded-2xl border bg-white">
             <TabsList className="inline-flex h-auto w-max min-w-full justify-start rounded-2xl bg-white p-2">
@@ -1374,7 +1304,6 @@ export default function Page() {
               <TabsTrigger value="grupos">Grupos</TabsTrigger>
               <TabsTrigger value="confirmar">Dones que veo en...</TabsTrigger>
               <TabsTrigger value="reportes">Reportes</TabsTrigger>
-              <TabsTrigger value="concentrados">Concentrados</TabsTrigger>
             </TabsList>
           </ScrollArea>
 
@@ -1388,7 +1317,7 @@ export default function Page() {
                 <Alert>
                   <Database className="h-4 w-4" />
                   <AlertDescription>
-                    Estado: <strong>{connectionState.mode === "supabase" ? "Supabase" : "Local"}</strong> · ENV URL: {envUrl ? "sí" : "no"} · ENV KEY: {envKey ? "sí" : "no"}
+                    Estado: <strong>{connectionState.mode === "supabase" ? "Supabase" : "Local"}</strong>
                   </AlertDescription>
                 </Alert>
                 <div className="grid gap-3 md:grid-cols-3">
@@ -1402,7 +1331,10 @@ export default function Page() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button onClick={connectSupabase}><Cloud className="mr-2 h-4 w-4" />Conectar Supabase</Button>
+                  <Button onClick={connectSupabase}>
+                    <Cloud className="mr-2 h-4 w-4" />
+                    Conectar Supabase
+                  </Button>
                   <Button variant="secondary" onClick={switchToLocal}>Usar modo local</Button>
                 </div>
               </CardContent>
@@ -1410,16 +1342,16 @@ export default function Page() {
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <FeatureCard icon={UserPlus} title="Usuarios" description="Crear, revisar y eliminar usuarios." onClick={() => setActiveTab("usuarios")} />
-              <FeatureCard icon={ClipboardCheck} title="Evaluar" description="Guardar evaluaciones funcionales y espirituales." onClick={() => setActiveTab("evaluar")} />
+              <FeatureCard icon={ClipboardCheck} title="Evaluar" description="Guardar evaluaciones con colores 1–5." onClick={() => setActiveTab("evaluar")} />
               <FeatureCard icon={Users} title="Grupos" description="Agregar, editar, quitar miembros y eliminar grupos." onClick={() => setActiveTab("grupos")} />
-              <FeatureCard icon={BarChart3} title="Reportes" description="Por persona, grupo y concentrados exportables." onClick={() => setActiveTab("reportes")} />
+              <FeatureCard icon={BarChart3} title="Reportes" description="Separados por persona, grupo y don." onClick={() => setActiveTab("reportes")} />
             </div>
           </TabsContent>
 
           <TabsContent value="usuarios" className="space-y-4">
             <SectionHeader
               title="Usuarios"
-              description="Crear usuarios y administrar registros completos."
+              description="Crear y administrar registros completos."
               backTo="inicio"
               onBack={() => setActiveTab("inicio")}
               action={
@@ -1431,9 +1363,7 @@ export default function Page() {
             />
 
             <Card className="rounded-3xl">
-              <CardHeader>
-                <CardTitle>Captura de usuario</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>Captura de usuario</CardTitle></CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Nombre completo</Label>
@@ -1470,14 +1400,19 @@ export default function Page() {
                 <CardTitle>Administrar usuarios</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {profiles.map((profile) => (
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                  <Input className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar persona..." />
+                </div>
+
+                {filteredProfiles.map((profile) => (
                   <div key={profile.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4">
                     <div>
                       <div className="font-semibold">{profile.full_name}</div>
                       <div className="text-sm text-slate-500">ID {profile.id} · {profile.church || "-"} · {profile.service_areas || "-"}</div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="secondary" onClick={() => { setSelectedProfileId(String(profile.id)); setActiveTab("reportes") }}>
+                      <Button variant="secondary" onClick={() => { setSelectedProfileId(String(profile.id)); setReportMode("persona"); setActiveTab("reportes") }}>
                         Ver reporte
                       </Button>
                       <Button variant="outline" onClick={() => { setSelectedProfileId(String(profile.id)); setActiveTab("evaluar") }}>
@@ -1485,7 +1420,7 @@ export default function Page() {
                       </Button>
                       <Button variant="destructive" onClick={() => deleteProfile(profile.id)}>
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Eliminar usuario
+                        Eliminar
                       </Button>
                     </div>
                   </div>
@@ -1496,14 +1431,14 @@ export default function Page() {
 
           <TabsContent value="evaluar" className="space-y-4">
             <SectionHeader
-              title="Evaluación de usuario"
-              description="Selecciona la persona, captura y guarda en tiempo real."
+              title="Evaluación"
+              description="Captura funcional y espiritual con guardado visible."
               backTo="inicio"
               onBack={() => setActiveTab("inicio")}
               action={
-                <Button variant="secondary" onClick={() => selectedProfileId && setActiveTab("reportes")}>
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  Ir a reporte
+                <Button onClick={saveCurrentEvaluation}>
+                  <Save className="mr-2 h-4 w-4" />
+                  Guardar evaluación
                 </Button>
               }
             />
@@ -1553,10 +1488,7 @@ export default function Page() {
                 </div>
 
                 <Card className="rounded-2xl">
-                  <CardHeader>
-                    <CardTitle className="text-base">Capa funcional · 48 preguntas</CardTitle>
-                    <CardDescription>El color de cada selector cambia según el valor 1–5.</CardDescription>
-                  </CardHeader>
+                  <CardHeader><CardTitle className="text-base">Capa funcional · 48 preguntas</CardTitle></CardHeader>
                   <CardContent>
                     <ScrollArea className="h-[560px] pr-3">
                       <div className="space-y-4">
@@ -1644,13 +1576,17 @@ export default function Page() {
               description="Crear, actualizar miembros, quitar usuarios y eliminar grupos completos."
               backTo="inicio"
               onBack={() => setActiveTab("inicio")}
+              action={
+                <Button onClick={createGroup}>
+                  <Save className="mr-2 h-4 w-4" />
+                  Guardar grupo
+                </Button>
+              }
             />
 
             <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
               <Card className="rounded-3xl">
-                <CardHeader>
-                  <CardTitle>Crear grupo</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>Crear grupo</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label>Nombre del grupo</Label>
@@ -1678,11 +1614,6 @@ export default function Page() {
                       </div>
                     </ScrollArea>
                   </div>
-
-                  <Button className="w-full" onClick={createGroup}>
-                    <Save className="mr-2 h-4 w-4" />
-                    Guardar grupo
-                  </Button>
                 </CardContent>
               </Card>
 
@@ -1695,11 +1626,11 @@ export default function Page() {
                         <div>
                           <div className="font-semibold">{group.name}</div>
                           <div className="text-sm text-slate-500">
-                            {group.memberIds.length} miembros · {group.memberIds.map((id) => profiles.find((p) => p.id === id)?.full_name).filter(Boolean).join(", ")}
+                            {group.memberIds.length} miembros
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <Button variant="secondary" onClick={() => { setSelectedGroupId(String(group.id)); setActiveTab("reportes") }}>
+                          <Button variant="secondary" onClick={() => { setSelectedGroupId(String(group.id)); setReportMode("grupo"); setActiveTab("reportes") }}>
                             Ver reporte
                           </Button>
                           <Button variant="outline" onClick={() => startEditGroup(group)}>
@@ -1711,6 +1642,10 @@ export default function Page() {
                             Eliminar grupo
                           </Button>
                         </div>
+                      </div>
+
+                      <div className="text-sm text-slate-500">
+                        {group.memberIds.map((id) => profiles.find((p) => p.id === id)?.full_name).filter(Boolean).join(", ")}
                       </div>
 
                       {editingGroupId === String(group.id) ? (
@@ -1831,66 +1766,60 @@ export default function Page() {
 
           <TabsContent value="reportes" className="space-y-4">
             <SectionHeader
-              title="Reportes por persona y por grupo"
-              description="Selecciona claramente qué persona o qué grupo deseas analizar."
+              title="Reportes"
+              description="Generación separada por persona, grupo o don dentro del grupo."
               backTo="inicio"
               onBack={() => setActiveTab("inicio")}
             />
 
-            <div className="grid gap-4 xl:grid-cols-[340px_1fr]">
-              <Card className="rounded-3xl">
-                <CardHeader><CardTitle>Selector de reportes</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Persona para reporte</Label>
-                    <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
-                      <SelectTrigger><SelectValue placeholder="Seleccionar persona" /></SelectTrigger>
-                      <SelectContent>
-                        {profiles.map((profile) => (
-                          <SelectItem key={profile.id} value={String(profile.id)}>
-                            {profile.id} · {profile.full_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+            <Tabs value={reportMode} onValueChange={(v) => setReportMode(v as ReportMode)} className="space-y-4">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="persona">Reporte por persona</TabsTrigger>
+                <TabsTrigger value="grupo">Reporte por grupo</TabsTrigger>
+                <TabsTrigger value="don">Reporte por don del grupo</TabsTrigger>
+              </TabsList>
 
-                  <div className="space-y-2">
-                    <Label>Grupo para reporte</Label>
-                    <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
-                      <SelectTrigger><SelectValue placeholder="Seleccionar grupo" /></SelectTrigger>
-                      <SelectContent>
-                        {state.groups.map((group) => (
-                          <SelectItem key={group.id} value={String(group.id)}>
-                            {group.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </CardContent>
-              </Card>
+              <TabsContent value="persona" className="space-y-4">
+                <Card className="rounded-3xl">
+                  <CardHeader><CardTitle>Seleccionar persona</CardTitle></CardHeader>
+                  <CardContent className="flex flex-col gap-3 md:flex-row md:items-end">
+                    <div className="flex-1 space-y-2">
+                      <Label>Persona</Label>
+                      <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar persona" /></SelectTrigger>
+                        <SelectContent>
+                          {profiles.map((profile) => (
+                            <SelectItem key={profile.id} value={String(profile.id)}>
+                              {profile.id} · {profile.full_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      variant="outline"
+                      disabled={!selectedProfile}
+                      onClick={() =>
+                        exportRefToPdf(
+                          personReportRef.current,
+                          `Reporte_Persona_${(selectedProfile?.full_name || "persona").replace(/\s+/g, "_")}`,
+                        )
+                      }
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Exportar PDF
+                    </Button>
+                  </CardContent>
+                </Card>
 
-              <div className="space-y-4">
                 {selectedProfile && functionalReport && spiritualReport && peerSummary ? (
                   <div ref={personReportRef}>
                     <Card className="rounded-3xl">
                       <CardHeader>
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <CardTitle>Reporte individual · {selectedProfile.full_name}</CardTitle>
-                            <CardDescription>
-                              ID {selectedProfile.id} · {selectedProfile.church || "-"} · {selectedProfile.service_areas || "-"}
-                            </CardDescription>
-                          </div>
-                          <Button
-                            variant="outline"
-                            onClick={() => exportRefToPdf(personReportRef.current, `Reporte_${selectedProfile.full_name.replace(/\s+/g, "_")}`)}
-                          >
-                            <Download className="mr-2 h-4 w-4" />
-                            Exportar PDF
-                          </Button>
-                        </div>
+                        <CardTitle>Reporte de persona · {selectedProfile.full_name}</CardTitle>
+                        <CardDescription>
+                          ID {selectedProfile.id} · {selectedProfile.church || "-"} · {selectedProfile.service_areas || "-"}
+                        </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-5">
                         <div className="grid gap-3 md:grid-cols-4">
@@ -1903,65 +1832,69 @@ export default function Page() {
                         <div className="grid gap-4 xl:grid-cols-3">
                           <TopCard title="Top funcional" items={functionalReport.top3} />
                           <TopCard title="Top espiritual" items={spiritualReport.top3} />
-                          <TopCard title="Los dones que otros ven en mí" items={peerSummary.top.slice(0, 10)} />
+                          <TopCard title="Dones que otros ven en mí" items={peerSummary.top.slice(0, 10)} />
                         </div>
 
                         <div className="grid gap-4 xl:grid-cols-2">
                           <GiftTable title="Clasificación funcional" entries={Object.entries(functionalReport.scores).sort((a, b) => b[1] - a[1])} max={20} />
                           <GiftTable title="Clasificación espiritual" entries={Object.entries(spiritualReport.scores).sort((a, b) => b[1] - a[1])} max={15} />
                         </div>
-
-                        <Card className="rounded-2xl border-dashed">
-                          <CardHeader><CardTitle className="text-base">Rubros globales funcionales</CardTitle></CardHeader>
-                          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                            <Metric label="Inclinación" value={`${Math.round(functionalReport.globalDimensions.inclinacion * 100)}%`} percent={functionalReport.globalDimensions.inclinacion * 100} />
-                            <Metric label="Disfrute" value={`${Math.round(functionalReport.globalDimensions.disfrute * 100)}%`} percent={functionalReport.globalDimensions.disfrute * 100} />
-                            <Metric label="Confirmación" value={`${Math.round(functionalReport.globalDimensions.confirmacion * 100)}%`} percent={functionalReport.globalDimensions.confirmacion * 100} />
-                            <Metric label="Fruto" value={`${Math.round(functionalReport.globalDimensions.fruto * 100)}%`} percent={functionalReport.globalDimensions.fruto * 100} />
-                          </CardContent>
-                        </Card>
-
-                        <Card className="rounded-2xl border-dashed">
-                          <CardHeader><CardTitle className="text-base">Rubros globales espirituales</CardTitle></CardHeader>
-                          <CardContent className="grid gap-3 md:grid-cols-3">
-                            <Metric label="Sensibilidad" value={`${Math.round(spiritualReport.globalDimensions.sensibilidad * 100)}%`} percent={spiritualReport.globalDimensions.sensibilidad * 100} />
-                            <Metric label="Fruto" value={`${Math.round(spiritualReport.globalDimensions.fruto * 100)}%`} percent={spiritualReport.globalDimensions.fruto * 100} />
-                            <Metric label="Confirmación" value={`${Math.round(spiritualReport.globalDimensions.confirmacion * 100)}%`} percent={spiritualReport.globalDimensions.confirmacion * 100} />
-                          </CardContent>
-                        </Card>
                       </CardContent>
                     </Card>
                   </div>
                 ) : null}
+              </TabsContent>
+
+              <TabsContent value="grupo" className="space-y-4">
+                <Card className="rounded-3xl">
+                  <CardHeader><CardTitle>Seleccionar grupo</CardTitle></CardHeader>
+                  <CardContent className="flex flex-col gap-3 md:flex-row md:items-end">
+                    <div className="flex-1 space-y-2">
+                      <Label>Grupo</Label>
+                      <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar grupo" /></SelectTrigger>
+                        <SelectContent>
+                          {state.groups.map((group) => (
+                            <SelectItem key={group.id} value={String(group.id)}>
+                              {group.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      variant="outline"
+                      disabled={!selectedGroup}
+                      onClick={() =>
+                        exportRefToPdf(
+                          groupReportRef.current,
+                          `Reporte_Grupo_${(selectedGroup?.name || "grupo").replace(/\s+/g, "_")}`,
+                        )
+                      }
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Exportar PDF
+                    </Button>
+                  </CardContent>
+                </Card>
 
                 {selectedGroup && groupReport ? (
                   <div ref={groupReportRef}>
                     <Card className="rounded-3xl">
                       <CardHeader>
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <CardTitle>Reporte grupal · {selectedGroup.name}</CardTitle>
-                            <CardDescription>
-                              {groupReport.members.length} miembros · {groupReport.completeMembers.length} completos
-                            </CardDescription>
-                          </div>
-                          <Button
-                            variant="outline"
-                            onClick={() => exportRefToPdf(groupReportRef.current, `Reporte_Grupo_${selectedGroup.name.replace(/\s+/g, "_")}`)}
-                          >
-                            <Download className="mr-2 h-4 w-4" />
-                            Exportar PDF
-                          </Button>
-                        </div>
+                        <CardTitle>Reporte de grupo · {selectedGroup.name}</CardTitle>
+                        <CardDescription>
+                          {groupReport.members.length} miembros · {groupReport.completeMembers.length} completos
+                        </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-5">
                         <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
                           <Metric label="Miembros" value={groupReport.members.length} />
                           <Metric label="Completos" value={groupReport.completeMembers.length} />
-                          <Metric label="Verde" value={groupReport.semaphores.Verde || 0} />
-                          <Metric label="Alta" value={groupReport.reliabilities.Alta || 0} />
-                          <Metric label="Amarillo" value={groupReport.semaphores.Amarillo || 0} />
-                          <Metric label="Rojo" value={groupReport.semaphores.Rojo || 0} />
+                          <Metric label="Top 1" value={groupReport.top22[0]?.name || "-"} />
+                          <Metric label="Top 2" value={groupReport.top22[1]?.name || "-"} />
+                          <Metric label="Top 3" value={groupReport.top22[2]?.name || "-"} />
+                          <Metric label="Confirmaciones" value={groupReport.topConfirmations[0]?.name || "-"} />
                         </div>
 
                         <div className="grid gap-4 xl:grid-cols-3">
@@ -1970,51 +1903,99 @@ export default function Page() {
                           <GiftTable title="Top 22 del grupo" entries={groupReport.top22.map((x) => [x.name, x.score])} max={groupReport.top22[0]?.score || 1} />
                         </div>
 
-                        <div className="grid gap-4 xl:grid-cols-2">
-                          <GiftTable title="Dones más confirmados por terceros" entries={groupReport.topConfirmations.map((x) => [x.name, x.score])} max={groupReport.topConfirmations[0]?.score || 1} />
-                          <Card className="rounded-2xl">
-                            <CardHeader><CardTitle className="text-base">Promedios funcionales del grupo</CardTitle></CardHeader>
-                            <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                              <Metric label="Inclinación" value={`${Math.round(groupReport.functionalDimensionsAvg.inclinacion * 100)}%`} percent={groupReport.functionalDimensionsAvg.inclinacion * 100} />
-                              <Metric label="Disfrute" value={`${Math.round(groupReport.functionalDimensionsAvg.disfrute * 100)}%`} percent={groupReport.functionalDimensionsAvg.disfrute * 100} />
-                              <Metric label="Confirmación" value={`${Math.round(groupReport.functionalDimensionsAvg.confirmacion * 100)}%`} percent={groupReport.functionalDimensionsAvg.confirmacion * 100} />
-                              <Metric label="Fruto" value={`${Math.round(groupReport.functionalDimensionsAvg.fruto * 100)}%`} percent={groupReport.functionalDimensionsAvg.fruto * 100} />
-                            </CardContent>
-                          </Card>
+                        <GiftTable title="Dones más confirmados por terceros" entries={groupReport.topConfirmations.map((x) => [x.name, x.score])} max={groupReport.topConfirmations[0]?.score || 1} />
+                      </CardContent>
+                    </Card>
+                  </div>
+                ) : null}
+              </TabsContent>
+
+              <TabsContent value="don" className="space-y-4">
+                <Card className="rounded-3xl">
+                  <CardHeader><CardTitle>Seleccionar don dentro del grupo</CardTitle></CardHeader>
+                  <CardContent className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label>Grupo</Label>
+                      <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar grupo" /></SelectTrigger>
+                        <SelectContent>
+                          {state.groups.map((group) => (
+                            <SelectItem key={group.id} value={String(group.id)}>
+                              {group.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Don</Label>
+                      <Select value={selectedGift} onValueChange={setSelectedGift}>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar don" /></SelectTrigger>
+                        <SelectContent>
+                          {ALL_GIFTS.map((gift) => (
+                            <SelectItem key={gift} value={gift}>
+                              {gift}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-end">
+                      <Button
+                        className="w-full"
+                        variant="outline"
+                        disabled={!selectedGroup || !selectedGift}
+                        onClick={() =>
+                          exportRefToPdf(
+                            giftReportRef.current,
+                            `Reporte_Don_${selectedGift.replace(/\s+/g, "_")}_${(selectedGroup?.name || "grupo").replace(/\s+/g, "_")}`,
+                          )
+                        }
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Exportar PDF
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {giftReport ? (
+                  <div ref={giftReportRef}>
+                    <Card className="rounded-3xl">
+                      <CardHeader>
+                        <CardTitle>Reporte por don · {giftReport.gift}</CardTitle>
+                        <CardDescription>Grupo: {selectedGroup?.name}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-5">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <Metric label="Puntaje total del don" value={giftReport.totalScore} />
+                          <Metric label="Confirmaciones del don" value={giftReport.totalConfirmations} />
+                          <Metric label="Promedio completado" value={`${Math.round(giftReport.avgCompletion)}%`} percent={giftReport.avgCompletion} />
                         </div>
 
                         <Card className="rounded-2xl">
-                          <CardHeader><CardTitle className="text-base">Promedios espirituales del grupo</CardTitle></CardHeader>
-                          <CardContent className="grid gap-3 md:grid-cols-3">
-                            <Metric label="Sensibilidad" value={`${Math.round(groupReport.spiritualDimensionsAvg.sensibilidad * 100)}%`} percent={groupReport.spiritualDimensionsAvg.sensibilidad * 100} />
-                            <Metric label="Fruto" value={`${Math.round(groupReport.spiritualDimensionsAvg.fruto * 100)}%`} percent={groupReport.spiritualDimensionsAvg.fruto * 100} />
-                            <Metric label="Confirmación" value={`${Math.round(groupReport.spiritualDimensionsAvg.confirmacion * 100)}%`} percent={groupReport.spiritualDimensionsAvg.confirmacion * 100} />
+                          <CardHeader><CardTitle className="text-base">Miembros del grupo para este don</CardTitle></CardHeader>
+                          <CardContent className="space-y-3">
+                            {giftReport.rows.map((row) => (
+                              <div key={row.member.id} className="grid gap-3 rounded-2xl border p-4 md:grid-cols-6">
+                                <div className="md:col-span-2">
+                                  <div className="font-semibold">{row.member.full_name}</div>
+                                  <div className="text-sm text-slate-500">ID {row.member.id}</div>
+                                </div>
+                                <Metric label="Puntaje" value={row.score} percent={(row.score / (FUNCTIONAL_GIFTS.includes(giftReport.gift as never) ? 20 : 15)) * 100} />
+                                <Metric label="Confirmaciones" value={row.confirmations} />
+                                <Metric label="Completado" value={`${Math.round(row.completion)}%`} percent={row.completion} />
+                                <Metric label="Semáforo" value={row.semaphore} percent={row.completion} />
+                              </div>
+                            ))}
                           </CardContent>
                         </Card>
                       </CardContent>
                     </Card>
                   </div>
                 ) : null}
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="concentrados" className="space-y-4">
-            <SectionHeader
-              title="Reportes concentrados por dones"
-              description="Vista global por dones funcionales, espirituales y confirmación."
-              backTo="inicio"
-              onBack={() => setActiveTab("inicio")}
-            />
-
-            <Card className="rounded-3xl">
-              <CardContent className="grid gap-4 pt-6 xl:grid-cols-2">
-                <GiftTable title="Concentrado funcional" entries={concentrated.functionalTop.map((x) => [x.name, x.score])} max={concentrated.functionalTop[0]?.score || 1} />
-                <GiftTable title="Concentrado espiritual" entries={concentrated.spiritualTop.map((x) => [x.name, x.score])} max={concentrated.spiritualTop[0]?.score || 1} />
-                <GiftTable title="Top 22 general" entries={concentrated.allTop.map((x) => [x.name, x.score])} max={concentrated.allTop[0]?.score || 1} />
-                <GiftTable title="Confirmación por terceros" entries={concentrated.recognitionsTop.map((x) => [x.name, x.score])} max={concentrated.recognitionsTop[0]?.score || 1} />
-              </CardContent>
-            </Card>
+              </TabsContent>
+            </Tabs>
           </TabsContent>
         </Tabs>
       </div>
