@@ -1,7 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { createClient, SupabaseClient } from "@supabase/supabase-js"
+import html2canvas from "html2canvas"
+import jsPDF from "jspdf"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,7 +17,22 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Progress } from "@/components/ui/progress"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { BarChart3, ClipboardCheck, Cloud, Database, FileText, Layers3, Search, UserPlus } from "lucide-react"
+import {
+  ArrowLeft,
+  BarChart3,
+  ClipboardCheck,
+  Cloud,
+  Database,
+  Download,
+  FileText,
+  Layers3,
+  Pencil,
+  Save,
+  Search,
+  Trash2,
+  UserPlus,
+  Users,
+} from "lucide-react"
 
 type FunctionalDimension = "inclinacion" | "disfrute" | "confirmacion" | "fruto"
 type SpiritualDimension = "sensibilidad" | "fruto" | "confirmacion"
@@ -131,220 +148,76 @@ const SPIRITUAL_DIMENSION_LABELS: Record<SpiritualDimension, string> = {
 
 const FUNCTIONAL_QUESTION_BANK: Record<string, { text: string; dimension: FunctionalDimension }[]> = {
   Enseñanza: [
-    {
-      text: "Cuando una persona no entiende una verdad bíblica o un tema importante, siento carga por explicarlo de forma clara y ordenada.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Disfruto estudiar, estructurar y transmitir conocimiento para que otros comprendan mejor un tema.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Con frecuencia otras personas me buscan para que les aclare dudas o les ayude a entender algo paso a paso.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Si debo preparar una explicación o clase, normalmente encuentro facilidad para organizar ideas y comunicar con sentido.",
-      dimension: "fruto",
-    },
+    { text: "Cuando una persona no entiende una verdad bíblica o un tema importante, siento carga por explicarlo de forma clara y ordenada.", dimension: "inclinacion" },
+    { text: "Disfruto estudiar, estructurar y transmitir conocimiento para que otros comprendan mejor un tema.", dimension: "disfrute" },
+    { text: "Con frecuencia otras personas me buscan para que les aclare dudas o les ayude a entender algo paso a paso.", dimension: "confirmacion" },
+    { text: "Si debo preparar una explicación o clase, normalmente encuentro facilidad para organizar ideas y comunicar con sentido.", dimension: "fruto" },
   ],
   Liderazgo: [
-    {
-      text: "Cuando un grupo está desorganizado o sin dirección, naturalmente empiezo a ordenar, orientar y mover a las personas hacia una meta.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Me siento cómodo tomando responsabilidad para coordinar personas, tiempos o tareas cuando hace falta avanzar.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Otras personas suelen seguir mis indicaciones o buscar mi dirección cuando hay que tomar decisiones o definir rumbo.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Disfruto ver cómo un equipo crece, se ordena y cumple objetivos cuando hay una conducción clara.",
-      dimension: "fruto",
-    },
+    { text: "Cuando un grupo está desorganizado o sin dirección, naturalmente empiezo a ordenar, orientar y mover a las personas hacia una meta.", dimension: "inclinacion" },
+    { text: "Me siento cómodo tomando responsabilidad para coordinar personas, tiempos o tareas cuando hace falta avanzar.", dimension: "disfrute" },
+    { text: "Otras personas suelen seguir mis indicaciones o buscar mi dirección cuando hay que tomar decisiones o definir rumbo.", dimension: "confirmacion" },
+    { text: "Disfruto ver cómo un equipo crece, se ordena y cumple objetivos cuando hay una conducción clara.", dimension: "fruto" },
   ],
   Servicio: [
-    {
-      text: "Cuando veo una necesidad práctica, mi impulso es ayudar de inmediato aunque nadie me lo pida.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Me siento realizado cuando apoyo tareas concretas que facilitan el trabajo o el bienestar de otros.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Con frecuencia participo resolviendo asuntos prácticos, operativos o logísticos sin buscar protagonismo.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Las personas suelen reconocer en mí disposición constante para ayudar, colaborar y atender necesidades reales.",
-      dimension: "fruto",
-    },
+    { text: "Cuando veo una necesidad práctica, mi impulso es ayudar de inmediato aunque nadie me lo pida.", dimension: "inclinacion" },
+    { text: "Me siento realizado cuando apoyo tareas concretas que facilitan el trabajo o el bienestar de otros.", dimension: "disfrute" },
+    { text: "Con frecuencia participo resolviendo asuntos prácticos, operativos o logísticos sin buscar protagonismo.", dimension: "confirmacion" },
+    { text: "Las personas suelen reconocer en mí disposición constante para ayudar, colaborar y atender necesidades reales.", dimension: "fruto" },
   ],
   Misericordia: [
-    {
-      text: "Cuando veo a alguien herido, vulnerable o en sufrimiento, siento una carga profunda por acompañarlo y aliviar su dolor.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Me resulta natural acercarme con compasión, paciencia y sensibilidad a personas que están pasando por momentos difíciles.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Otros suelen percibir en mí empatía genuina y capacidad para consolar sin juzgar duramente.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Disfruto restaurar, cuidar y sostener emocional o espiritualmente a personas que necesitan apoyo.",
-      dimension: "fruto",
-    },
+    { text: "Cuando veo a alguien herido, vulnerable o en sufrimiento, siento una carga profunda por acompañarlo y aliviar su dolor.", dimension: "inclinacion" },
+    { text: "Me resulta natural acercarme con compasión, paciencia y sensibilidad a personas que están pasando por momentos difíciles.", dimension: "disfrute" },
+    { text: "Otros suelen percibir en mí empatía genuina y capacidad para consolar sin juzgar duramente.", dimension: "confirmacion" },
+    { text: "Disfruto restaurar, cuidar y sostener emocional o espiritualmente a personas que necesitan apoyo.", dimension: "fruto" },
   ],
   Exhortación: [
-    {
-      text: "Cuando alguien está estancado, desanimado o desviado, siento impulso por animarlo, corregirlo y ayudarlo a avanzar.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Me es natural hablar con claridad para motivar, fortalecer o llamar a una persona a responder correctamente.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Con frecuencia mis palabras ayudan a otros a reaccionar, tomar decisiones o perseverar en medio de la dificultad.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Disfruto acompañar procesos de crecimiento personal o espiritual ayudando a otros a dar el siguiente paso.",
-      dimension: "fruto",
-    },
+    { text: "Cuando alguien está estancado, desanimado o desviado, siento impulso por animarlo, corregirlo y ayudarlo a avanzar.", dimension: "inclinacion" },
+    { text: "Me es natural hablar con claridad para motivar, fortalecer o llamar a una persona a responder correctamente.", dimension: "disfrute" },
+    { text: "Con frecuencia mis palabras ayudan a otros a reaccionar, tomar decisiones o perseverar en medio de la dificultad.", dimension: "confirmacion" },
+    { text: "Disfruto acompañar procesos de crecimiento personal o espiritual ayudando a otros a dar el siguiente paso.", dimension: "fruto" },
   ],
   Evangelismo: [
-    {
-      text: "Siento carga por compartir el mensaje de salvación con personas que aún no conocen a Cristo.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Me resulta natural iniciar conversaciones espirituales o presentar el evangelio de forma sencilla y directa.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Con frecuencia identifico oportunidades para hablar de Jesús y animar a otros a responder a la fe.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Disfruto ver a personas acercarse a Dios, interesarse por el evangelio o tomar decisiones espirituales.",
-      dimension: "fruto",
-    },
+    { text: "Siento carga por compartir el mensaje de salvación con personas que aún no conocen a Cristo.", dimension: "inclinacion" },
+    { text: "Me resulta natural iniciar conversaciones espirituales o presentar el evangelio de forma sencilla y directa.", dimension: "disfrute" },
+    { text: "Con frecuencia identifico oportunidades para hablar de Jesús y animar a otros a responder a la fe.", dimension: "confirmacion" },
+    { text: "Disfruto ver a personas acercarse a Dios, interesarse por el evangelio o tomar decisiones espirituales.", dimension: "fruto" },
   ],
   Fe: [
-    {
-      text: "Cuando otros dudan o ven imposible una situación, dentro de mí suele permanecer una confianza firme en que Dios puede actuar.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Me resulta natural sostener esperanza, orar con convicción y permanecer firme aun cuando no hay evidencias visibles.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Otras personas encuentran ánimo o estabilidad en mi manera de confiar en Dios en medio de procesos difíciles.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Disfruto asumir retos espirituales o ministeriales confiando en la provisión y respaldo de Dios.",
-      dimension: "fruto",
-    },
+    { text: "Cuando otros dudan o ven imposible una situación, dentro de mí suele permanecer una confianza firme en que Dios puede actuar.", dimension: "inclinacion" },
+    { text: "Me resulta natural sostener esperanza, orar con convicción y permanecer firme aun cuando no hay evidencias visibles.", dimension: "disfrute" },
+    { text: "Otras personas encuentran ánimo o estabilidad en mi manera de confiar en Dios en medio de procesos difíciles.", dimension: "confirmacion" },
+    { text: "Disfruto asumir retos espirituales o ministeriales confiando en la provisión y respaldo de Dios.", dimension: "fruto" },
   ],
   Discernimiento: [
-    {
-      text: "Con frecuencia percibo diferencias entre lo auténtico y lo engañoso en personas, ambientes, mensajes o decisiones.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Cuando algo no está bien, suelo identificarlo internamente aun antes de tener toda la información visible.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Otras personas buscan mi opinión para evaluar si una situación, propuesta o influencia es sana o no.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Disfruto ayudar a filtrar, evaluar y distinguir con sabiduría lo que conviene de lo que debe evitarse.",
-      dimension: "fruto",
-    },
+    { text: "Con frecuencia percibo diferencias entre lo auténtico y lo engañoso en personas, ambientes, mensajes o decisiones.", dimension: "inclinacion" },
+    { text: "Cuando algo no está bien, suelo identificarlo internamente aun antes de tener toda la información visible.", dimension: "disfrute" },
+    { text: "Otras personas buscan mi opinión para evaluar si una situación, propuesta o influencia es sana o no.", dimension: "confirmacion" },
+    { text: "Disfruto ayudar a filtrar, evaluar y distinguir con sabiduría lo que conviene de lo que debe evitarse.", dimension: "fruto" },
   ],
   Profecía: [
-    {
-      text: "Siento carga por expresar con verdad y valentía lo que Dios demanda o lo que una situación necesita escuchar.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Me resulta natural confrontar lo incorrecto, señalar desvíos o llamar a una respuesta alineada con la voluntad de Dios.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Con frecuencia mis palabras producen conciencia, convicción o claridad espiritual en otros.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Disfruto comunicar mensajes directos, pertinentes y espiritualmente incisivos cuando es necesario.",
-      dimension: "fruto",
-    },
+    { text: "Siento carga por expresar con verdad y valentía lo que Dios demanda o lo que una situación necesita escuchar.", dimension: "inclinacion" },
+    { text: "Me resulta natural confrontar lo incorrecto, señalar desvíos o llamar a una respuesta alineada con la voluntad de Dios.", dimension: "disfrute" },
+    { text: "Con frecuencia mis palabras producen conciencia, convicción o claridad espiritual en otros.", dimension: "confirmacion" },
+    { text: "Disfruto comunicar mensajes directos, pertinentes y espiritualmente incisivos cuando es necesario.", dimension: "fruto" },
   ],
   Generosidad: [
-    {
-      text: "Cuando detecto una necesidad, me nace compartir recursos, tiempo o bienes para suplirla con alegría.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Me resulta natural dar sin sentir que pierdo, especialmente cuando percibo que eso bendice o impulsa a otros.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Otras personas suelen reconocer en mí disposición abierta para contribuir materialmente o sostener causas valiosas.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Disfruto sembrar recursos en personas, proyectos o necesidades con sentido de propósito y gratitud.",
-      dimension: "fruto",
-    },
+    { text: "Cuando detecto una necesidad, me nace compartir recursos, tiempo o bienes para suplirla con alegría.", dimension: "inclinacion" },
+    { text: "Me resulta natural dar sin sentir que pierdo, especialmente cuando percibo que eso bendice o impulsa a otros.", dimension: "disfrute" },
+    { text: "Otras personas suelen reconocer en mí disposición abierta para contribuir materialmente o sostener causas valiosas.", dimension: "confirmacion" },
+    { text: "Disfruto sembrar recursos en personas, proyectos o necesidades con sentido de propósito y gratitud.", dimension: "fruto" },
   ],
   Pastoreo: [
-    {
-      text: "Siento carga por cuidar, acompañar y dar seguimiento continuo al crecimiento de personas o grupos.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Me resulta natural interesarme por el estado espiritual, emocional y práctico de otros de forma constante.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Con frecuencia las personas me buscan para consejo, cuidado, acompañamiento o dirección cercana.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Disfruto ver procesos de madurez, protección y restauración sostenidos en personas que acompaño.",
-      dimension: "fruto",
-    },
+    { text: "Siento carga por cuidar, acompañar y dar seguimiento continuo al crecimiento de personas o grupos.", dimension: "inclinacion" },
+    { text: "Me resulta natural interesarme por el estado espiritual, emocional y práctico de otros de forma constante.", dimension: "disfrute" },
+    { text: "Con frecuencia las personas me buscan para consejo, cuidado, acompañamiento o dirección cercana.", dimension: "confirmacion" },
+    { text: "Disfruto ver procesos de madurez, protección y restauración sostenidos en personas que acompaño.", dimension: "fruto" },
   ],
   Sabiduría: [
-    {
-      text: "Cuando surgen problemas complejos, suelo ver conexiones, caminos de solución y aplicaciones prácticas que otros no perciben fácilmente.",
-      dimension: "inclinacion",
-    },
-    {
-      text: "Me resulta natural traducir principios espirituales o conocimientos en decisiones útiles, prudentes y oportunas.",
-      dimension: "disfrute",
-    },
-    {
-      text: "Otras personas buscan mi consejo cuando necesitan claridad para decidir correctamente en situaciones difíciles.",
-      dimension: "confirmacion",
-    },
-    {
-      text: "Disfruto aportar perspectiva, criterio y dirección práctica que ayude a resolver asuntos con equilibrio y madurez.",
-      dimension: "fruto",
-    },
+    { text: "Cuando surgen problemas complejos, suelo ver conexiones, caminos de solución y aplicaciones prácticas que otros no perciben fácilmente.", dimension: "inclinacion" },
+    { text: "Me resulta natural traducir principios espirituales o conocimientos en decisiones útiles, prudentes y oportunas.", dimension: "disfrute" },
+    { text: "Otras personas buscan mi consejo cuando necesitan claridad para decidir correctamente en situaciones difíciles.", dimension: "confirmacion" },
+    { text: "Disfruto aportar perspectiva, criterio y dirección práctica que ayude a resolver asuntos con equilibrio y madurez.", dimension: "fruto" },
   ],
 }
 
@@ -421,73 +294,7 @@ const SPIRITUAL_QUESTIONS: SpiritualQuestion[] = SPIRITUAL_GIFTS.flatMap((gift, 
   })),
 )
 
-const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v4"
-
-const SQL_SCHEMA = `create extension if not exists pgcrypto;
-
-create table if not exists public.profiles (
-  id bigint generated by default as identity primary key,
-  full_name text not null,
-  age integer,
-  sex text,
-  church text,
-  service_areas text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
-create table if not exists public.evaluations (
-  id uuid primary key default gen_random_uuid(),
-  profile_id bigint references public.profiles(id) on delete cascade,
-  functional_answers jsonb not null default '{}'::jsonb,
-  spiritual_answers jsonb not null default '{}'::jsonb,
-  completed_functional boolean default false,
-  completed_spiritual boolean default false,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  unique(profile_id)
-);
-
-create table if not exists public.groups (
-  id bigint generated by default as identity primary key,
-  name text not null,
-  created_at timestamptz default now()
-);
-
-create table if not exists public.group_members (
-  id bigint generated by default as identity primary key,
-  group_id bigint references public.groups(id) on delete cascade,
-  profile_id bigint references public.profiles(id) on delete cascade,
-  created_at timestamptz default now(),
-  unique(group_id, profile_id)
-);
-
-create table if not exists public.peer_recognitions (
-  id uuid primary key default gen_random_uuid(),
-  from_profile_id bigint references public.profiles(id) on delete cascade,
-  to_profile_id bigint references public.profiles(id) on delete cascade,
-  gifts text[] not null default '{}',
-  created_at timestamptz default now(),
-  unique(from_profile_id, to_profile_id)
-);
-
-alter table public.profiles enable row level security;
-alter table public.evaluations enable row level security;
-alter table public.groups enable row level security;
-alter table public.group_members enable row level security;
-alter table public.peer_recognitions enable row level security;
-
-drop policy if exists "open access demo profiles" on public.profiles;
-drop policy if exists "open access demo evaluations" on public.evaluations;
-drop policy if exists "open access demo groups" on public.groups;
-drop policy if exists "open access demo group_members" on public.group_members;
-drop policy if exists "open access demo peer_recognitions" on public.peer_recognitions;
-
-create policy "open access demo profiles" on public.profiles for all using (true) with check (true);
-create policy "open access demo evaluations" on public.evaluations for all using (true) with check (true);
-create policy "open access demo groups" on public.groups for all using (true) with check (true);
-create policy "open access demo group_members" on public.group_members for all using (true) with check (true);
-create policy "open access demo peer_recognitions" on public.peer_recognitions for all using (true) with check (true);`
+const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v6"
 
 function buildEmptyState(): AppState {
   return {
@@ -541,6 +348,23 @@ function getReliability(answered: number, total: number) {
   if (pct >= 0.75) return "Media"
   if (pct > 0) return "Baja"
   return "Sin datos"
+}
+
+function getScoreBgClass(score: number) {
+  if (score >= 5) return "bg-emerald-100 text-emerald-800 border-emerald-200"
+  if (score >= 4) return "bg-lime-100 text-lime-800 border-lime-200"
+  if (score >= 3) return "bg-amber-100 text-amber-800 border-amber-200"
+  if (score >= 2) return "bg-orange-100 text-orange-800 border-orange-200"
+  if (score >= 1) return "bg-rose-100 text-rose-800 border-rose-200"
+  return "bg-slate-100 text-slate-600 border-slate-200"
+}
+
+function getPercentBgClass(percent: number) {
+  if (percent >= 80) return "bg-emerald-100 text-emerald-800 border-emerald-200"
+  if (percent >= 60) return "bg-lime-100 text-lime-800 border-lime-200"
+  if (percent >= 40) return "bg-amber-100 text-amber-800 border-amber-200"
+  if (percent > 0) return "bg-rose-100 text-rose-800 border-rose-200"
+  return "bg-slate-100 text-slate-600 border-slate-200"
 }
 
 function computeFunctionalEvaluation(raw?: Partial<Evaluation>) {
@@ -679,18 +503,8 @@ function buildGroupReport(
   const reliabilities: Record<string, number> = { Alta: 0, Media: 0, Baja: 0, "Sin datos": 0 }
   const semaphores: Record<string, number> = { Verde: 0, Amarillo: 0, Rojo: 0, "Sin datos": 0 }
 
-  const functionalGlobal = {
-    inclinacion: 0,
-    disfrute: 0,
-    confirmacion: 0,
-    fruto: 0,
-  }
-
-  const spiritualGlobal = {
-    sensibilidad: 0,
-    fruto: 0,
-    confirmacion: 0,
-  }
+  const functionalGlobal = { inclinacion: 0, disfrute: 0, confirmacion: 0, fruto: 0 }
+  const spiritualGlobal = { sensibilidad: 0, fruto: 0, confirmacion: 0 }
 
   completeMembers.forEach((member) => {
     const evaluation = evaluations[member.id] || {}
@@ -755,6 +569,49 @@ function buildGroupReport(
   }
 }
 
+function buildConcentratedReports(
+  profiles: Profile[],
+  evaluations: Record<number, Evaluation>,
+  recognitions: PeerRecognition[],
+) {
+  const completedProfiles = profiles.filter((p) => {
+    const ev = evaluations[p.id] || {}
+    return computeFunctionalEvaluation(ev).answered === 48 && computeSpiritualEvaluation(ev).answered === 30
+  })
+
+  const functionalTotals = Object.fromEntries(FUNCTIONAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const spiritualTotals = Object.fromEntries(SPIRITUAL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const allTotals = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+  const recognitionsTotals = Object.fromEntries(ALL_GIFTS.map((g) => [g, 0])) as Record<string, number>
+
+  completedProfiles.forEach((profile) => {
+    const ev = evaluations[profile.id] || {}
+    const functional = computeFunctionalEvaluation(ev)
+    const spiritual = computeSpiritualEvaluation(ev)
+    Object.entries(functional.scores).forEach(([gift, score]) => {
+      functionalTotals[gift] += score
+      allTotals[gift] += score
+    })
+    Object.entries(spiritual.scores).forEach(([gift, score]) => {
+      spiritualTotals[gift] += score
+      allTotals[gift] += score
+    })
+  })
+
+  recognitions.forEach((r) => {
+    ;(r.gifts || []).forEach((gift) => {
+      recognitionsTotals[gift] += 1
+    })
+  })
+
+  return {
+    functionalTop: topNFromScores(functionalTotals, FUNCTIONAL_GIFTS.length),
+    spiritualTop: topNFromScores(spiritualTotals, SPIRITUAL_GIFTS.length),
+    allTop: topNFromScores(allTotals, 22),
+    recognitionsTop: topNFromScores(recognitionsTotals, 22),
+  }
+}
+
 function buildLocalAdapter(setState: (state: AppState) => void) {
   return {
     mode: "local" as const,
@@ -798,10 +655,7 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
       if (membersRes.error) throw membersRes.error
       if (recognitionsRes.error) throw recognitionsRes.error
 
-      const evalMap = Object.fromEntries((evaluationsRes.data || []).map((ev) => [ev.profile_id, ev])) as Record<
-        number,
-        Evaluation
-      >
+      const evalMap = Object.fromEntries((evaluationsRes.data || []).map((ev) => [ev.profile_id, ev])) as Record<number, Evaluation>
 
       const groups = (groupsRes.data || []).map((g) => ({
         ...g,
@@ -835,15 +689,44 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
 
       if (memberIds.length) {
         const { error: memberError } = await supabase.from("group_members").insert(
-          memberIds.map((profile_id) => ({
-            group_id: data.id,
-            profile_id,
-          })),
+          memberIds.map((profile_id) => ({ group_id: data.id, profile_id })),
         )
         if (memberError) throw memberError
       }
 
       return { ...(data as Group), memberIds }
+    },
+    async updateGroup(groupId: number, name: string, memberIds: number[]) {
+      const { error } = await supabase.from("groups").update({ name }).eq("id", groupId)
+      if (error) throw error
+
+      const del = await supabase.from("group_members").delete().eq("group_id", groupId)
+      if (del.error) throw del.error
+
+      if (memberIds.length) {
+        const { error: memberError } = await supabase.from("group_members").insert(
+          memberIds.map((profile_id) => ({ group_id: groupId, profile_id })),
+        )
+        if (memberError) throw memberError
+      }
+    },
+    async deleteGroup(groupId: number) {
+      const delMembers = await supabase.from("group_members").delete().eq("group_id", groupId)
+      if (delMembers.error) throw delMembers.error
+      const delGroup = await supabase.from("groups").delete().eq("id", groupId)
+      if (delGroup.error) throw delGroup.error
+    },
+    async deleteProfile(profileId: number) {
+      const delRecognitions1 = await supabase.from("peer_recognitions").delete().eq("from_profile_id", profileId)
+      if (delRecognitions1.error) throw delRecognitions1.error
+      const delRecognitions2 = await supabase.from("peer_recognitions").delete().eq("to_profile_id", profileId)
+      if (delRecognitions2.error) throw delRecognitions2.error
+      const delMembers = await supabase.from("group_members").delete().eq("profile_id", profileId)
+      if (delMembers.error) throw delMembers.error
+      const delEval = await supabase.from("evaluations").delete().eq("profile_id", profileId)
+      if (delEval.error) throw delEval.error
+      const delProfile = await supabase.from("profiles").delete().eq("id", profileId)
+      if (delProfile.error) throw delProfile.error
     },
     async replaceRecognition(payload: Omit<PeerRecognition, "id">) {
       const del = await supabase
@@ -853,7 +736,6 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
         .eq("to_profile_id", payload.to_profile_id)
 
       if (del.error) throw del.error
-
       const { error } = await supabase.from("peer_recognitions").insert(payload)
       if (error) throw error
     },
@@ -867,9 +749,10 @@ function ScoreSelect({
   value: number | ""
   onChange: (value: number | "") => void
 }) {
+  const numeric = value === "" ? 0 : Number(value)
   return (
     <Select value={value === "" ? "blank" : String(value)} onValueChange={(v) => onChange(v === "blank" ? "" : Number(v))}>
-      <SelectTrigger className="h-9">
+      <SelectTrigger className={`h-9 border ${getScoreBgClass(numeric)}`}>
         <SelectValue placeholder="-" />
       </SelectTrigger>
       <SelectContent>
@@ -884,11 +767,43 @@ function ScoreSelect({
   )
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function Metric({ label, value, percent }: { label: string; value: string | number; percent?: number }) {
   return (
-    <div className="rounded-2xl border bg-white p-3 text-center">
-      <div className="text-xs text-slate-500">{label}</div>
+    <div className={`rounded-2xl border p-3 text-center ${percent !== undefined ? getPercentBgClass(percent) : "bg-white"}`}>
+      <div className="text-xs">{label}</div>
       <div className="mt-1 text-lg font-bold">{value}</div>
+    </div>
+  )
+}
+
+function SectionHeader({
+  title,
+  description,
+  backTo,
+  onBack,
+  action,
+}: {
+  title: string
+  description?: string
+  backTo?: string
+  onBack?: () => void
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div>
+        <div className="flex items-center gap-2">
+          {backTo && onBack ? (
+            <Button variant="outline" size="sm" onClick={onBack}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Regresar
+            </Button>
+          ) : null}
+          <h2 className="text-xl font-bold">{title}</h2>
+        </div>
+        {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
+      </div>
+      {action}
     </div>
   )
 }
@@ -942,17 +857,20 @@ function GiftTable({
       </CardHeader>
       <CardContent className="space-y-3">
         {entries.length ? (
-          entries.map(([gift, score]) => (
-            <div key={gift} className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span>{gift}</span>
-                <span className="font-medium">
-                  {score} · {getScoreLabel(score, max)}
-                </span>
+          entries.map(([gift, score]) => {
+            const percent = max ? (score / max) * 100 : 0
+            return (
+              <div key={gift} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span>{gift}</span>
+                  <span className={`rounded-full border px-2 py-0.5 font-medium ${getPercentBgClass(percent)}`}>
+                    {score} · {getScoreLabel(score, max)}
+                  </span>
+                </div>
+                <Progress value={percent} />
               </div>
-              <Progress value={max ? (score / max) * 100 : 0} />
-            </div>
-          ))
+            )
+          })
         ) : (
           <div className="text-sm text-slate-500">Sin datos</div>
         )}
@@ -978,7 +896,9 @@ function TopCard({
           items.map((item, idx) => (
             <div key={`${item.name}-${idx}`} className="flex items-center justify-between rounded-xl border p-3 text-sm">
               <span>{item.name}</span>
-              <Badge variant="secondary">{item.score}</Badge>
+              <Badge className={getScoreBgClass(item.score)} variant="outline">
+                {item.score}
+              </Badge>
             </div>
           ))
         ) : (
@@ -1020,9 +940,16 @@ export default function Page() {
   const [groupName, setGroupName] = useState("")
   const [groupMembers, setGroupMembers] = useState<number[]>([])
 
+  const [editingGroupId, setEditingGroupId] = useState("")
+  const [editingGroupName, setEditingGroupName] = useState("")
+  const [editingGroupMembers, setEditingGroupMembers] = useState<number[]>([])
+
   const [fromProfileId, setFromProfileId] = useState("")
   const [toProfileId, setToProfileId] = useState("")
   const [selectedRecognitionGifts, setSelectedRecognitionGifts] = useState<string[]>([])
+
+  const personReportRef = useRef<HTMLDivElement | null>(null)
+  const groupReportRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -1069,6 +996,10 @@ export default function Page() {
   const profiles = useMemo(() => [...state.profiles].sort((a, b) => a.id - b.id), [state.profiles])
   const selectedProfile = profiles.find((p) => String(p.id) === String(selectedProfileId)) || null
   const selectedGroup = state.groups.find((g) => String(g.id) === String(selectedGroupId)) || null
+  const concentrated = useMemo(
+    () => buildConcentratedReports(state.profiles, state.evaluations, state.peerRecognitions),
+    [state.profiles, state.evaluations, state.peerRecognitions],
+  )
 
   const selectedEvaluation =
     selectedProfile
@@ -1096,6 +1027,17 @@ export default function Page() {
       return computeFunctionalEvaluation(ev).answered === 48 && computeSpiritualEvaluation(ev).answered === 30
     }).length,
     recognitions: state.peerRecognitions.length,
+  }
+
+  async function exportRefToPdf(element: HTMLDivElement | null, fileName: string) {
+    if (!element) return
+    const canvas = await html2canvas(element, { scale: 2, backgroundColor: "#ffffff" })
+    const imgData = canvas.toDataURL("image/png")
+    const pdf = new jsPDF("p", "mm", "a4")
+    const pdfWidth = pdf.internal.pageSize.getWidth()
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight)
+    pdf.save(`${fileName}.pdf`)
   }
 
   async function switchToLocal() {
@@ -1206,7 +1148,38 @@ export default function Page() {
       church: "",
       service_areas: "",
     })
-    setActiveTab("evaluar")
+    setActiveTab("usuarios")
+  }
+
+  async function deleteProfile(profileId: number) {
+    if (!confirm("¿Eliminar este usuario completo? También se eliminarán su evaluación, relaciones en grupos y confirmaciones.")) return
+
+    if (adapter?.mode === "supabase") {
+      await adapter.deleteProfile(profileId)
+    }
+
+    const nextGroups = state.groups.map((g) => ({
+      ...g,
+      memberIds: g.memberIds.filter((id) => id !== profileId),
+    }))
+
+    const nextRecognitions = state.peerRecognitions.filter(
+      (r) => r.from_profile_id !== profileId && r.to_profile_id !== profileId,
+    )
+
+    const nextEvaluations = { ...state.evaluations }
+    delete nextEvaluations[profileId]
+
+    const nextState: AppState = {
+      ...state,
+      profiles: state.profiles.filter((p) => p.id !== profileId),
+      evaluations: nextEvaluations,
+      groups: nextGroups,
+      peerRecognitions: nextRecognitions,
+    }
+
+    if (selectedProfileId === String(profileId)) setSelectedProfileId("")
+    await persistLocal(nextState)
   }
 
   async function updateEvaluation(
@@ -1287,6 +1260,46 @@ export default function Page() {
     setGroupMembers([])
   }
 
+  function startEditGroup(group: Group) {
+    setEditingGroupId(String(group.id))
+    setEditingGroupName(group.name)
+    setEditingGroupMembers(group.memberIds)
+  }
+
+  async function saveGroupEdit() {
+    if (!editingGroupId || !editingGroupName.trim()) return
+    const gid = Number(editingGroupId)
+    const memberIds = [...new Set(editingGroupMembers)].slice(0, 300)
+
+    if (adapter?.mode === "supabase") {
+      await adapter.updateGroup(gid, editingGroupName.trim(), memberIds)
+    }
+
+    const nextState = {
+      ...state,
+      groups: state.groups.map((g) => (g.id === gid ? { ...g, name: editingGroupName.trim(), memberIds } : g)),
+    }
+    await persistLocal(nextState)
+    setEditingGroupId("")
+    setEditingGroupName("")
+    setEditingGroupMembers([])
+  }
+
+  async function deleteGroup(groupId: number) {
+    if (!confirm("¿Eliminar este grupo completo?")) return
+
+    if (adapter?.mode === "supabase") {
+      await adapter.deleteGroup(groupId)
+    }
+
+    const nextState = {
+      ...state,
+      groups: state.groups.filter((g) => g.id !== groupId),
+    }
+    if (selectedGroupId === String(groupId)) setSelectedGroupId("")
+    await persistLocal(nextState)
+  }
+
   async function saveRecognition() {
     if (!fromProfileId || !toProfileId || !selectedRecognitionGifts.length) return
 
@@ -1334,12 +1347,12 @@ export default function Page() {
           <CardContent className="p-5 md:p-7">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · Lógica tipo Excel</div>
+                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · Control visual profesional</div>
                 <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                   Sistema multiusuario de dones funcionales y espirituales
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  Compatible con celular y PC. Integra autodiagnóstico, confirmación por terceros, reportes y base de datos.
+                  Con botones de regreso, guardado visible, control de grupos, reportes claros y exportación PDF.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -1352,147 +1365,74 @@ export default function Page() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-3xl">
-          <CardHeader>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle>Conectividad y persistencia</CardTitle>
-                <CardDescription>
-                  Modo local para pruebas o Supabase para operación multiusuario real y almacenamiento futuro.
-                </CardDescription>
-              </div>
-              <Badge variant={connectionState.connected ? "default" : "secondary"} className="w-fit">
-                {connectionState.mode === "supabase" ? "Supabase" : "Local"}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Alert>
-              <Database className="h-4 w-4" />
-              <AlertDescription>{connectionState.message}</AlertDescription>
-            </Alert>
-
-            <div className="rounded-xl border p-3 text-sm">
-              ENV URL: {envUrl ? "sí" : "no"} | ENV KEY: {envKey ? "sí" : "no"}
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="space-y-2 md:col-span-1">
-                <Label>Supabase URL</Label>
-                <Input value={supabaseUrl} onChange={(e) => setSupabaseUrl(e.target.value)} placeholder="https://xxxx.supabase.co" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Supabase anon key</Label>
-                <Input value={supabaseAnonKey} onChange={(e) => setSupabaseAnonKey(e.target.value)} placeholder="eyJ..." />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={connectSupabase}>
-                <Cloud className="mr-2 h-4 w-4" />
-                Conectar Supabase
-              </Button>
-              <Button variant="secondary" onClick={switchToLocal}>
-                Usar modo local
-              </Button>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="outline">
-                    <FileText className="mr-2 h-4 w-4" />
-                    Ver esquema SQL
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-4xl">
-                  <DialogHeader>
-                    <DialogTitle>Esquema SQL para Supabase</DialogTitle>
-                  </DialogHeader>
-                  <ScrollArea className="h-[70vh] rounded-xl border bg-slate-50 p-4">
-                    <pre className="whitespace-pre-wrap text-xs">{SQL_SCHEMA}</pre>
-                  </ScrollArea>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </CardContent>
-        </Card>
-
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <ScrollArea className="w-full whitespace-nowrap rounded-2xl border bg-white">
             <TabsList className="inline-flex h-auto w-max min-w-full justify-start rounded-2xl bg-white p-2">
               <TabsTrigger value="inicio">Inicio</TabsTrigger>
-              <TabsTrigger value="usuarios">Crear usuario</TabsTrigger>
-              <TabsTrigger value="evaluar">Evaluar usuario</TabsTrigger>
-              <TabsTrigger value="grupos">Crear grupos</TabsTrigger>
+              <TabsTrigger value="usuarios">Usuarios</TabsTrigger>
+              <TabsTrigger value="evaluar">Evaluar</TabsTrigger>
+              <TabsTrigger value="grupos">Grupos</TabsTrigger>
               <TabsTrigger value="confirmar">Dones que veo en...</TabsTrigger>
               <TabsTrigger value="reportes">Reportes</TabsTrigger>
+              <TabsTrigger value="concentrados">Concentrados</TabsTrigger>
             </TabsList>
           </ScrollArea>
 
           <TabsContent value="inicio" className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <FeatureCard icon={UserPlus} title="Crear usuario" description="Alta con ID automático y datos básicos." onClick={() => setActiveTab("usuarios")} />
-              <FeatureCard icon={ClipboardCheck} title="Evaluar" description="48 funcionales y 30 espirituales con lógica tipo Excel." onClick={() => setActiveTab("evaluar")} />
-              <FeatureCard icon={Layers3} title="Grupos" description="Arma grupos de hasta 300 personas." onClick={() => setActiveTab("grupos")} />
-              <FeatureCard icon={BarChart3} title="Reportes" description="Persona, grupo, top 22 y confirmaciones." onClick={() => setActiveTab("reportes")} />
-            </div>
-
             <Card className="rounded-3xl">
               <CardHeader>
-                <CardTitle>Usuarios registrados</CardTitle>
+                <CardTitle>Conectividad y persistencia</CardTitle>
+                <CardDescription>{connectionState.message}</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                  <Input className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar persona..." />
+              <CardContent className="space-y-4">
+                <Alert>
+                  <Database className="h-4 w-4" />
+                  <AlertDescription>
+                    Estado: <strong>{connectionState.mode === "supabase" ? "Supabase" : "Local"}</strong> · ENV URL: {envUrl ? "sí" : "no"} · ENV KEY: {envKey ? "sí" : "no"}
+                  </AlertDescription>
+                </Alert>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label>Supabase URL</Label>
+                    <Input value={supabaseUrl} onChange={(e) => setSupabaseUrl(e.target.value)} />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Supabase anon key</Label>
+                    <Input value={supabaseAnonKey} onChange={(e) => setSupabaseAnonKey(e.target.value)} />
+                  </div>
                 </div>
-
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {filteredProfiles.map((profile) => {
-                    const evaluation = state.evaluations[profile.id] || {}
-                    const functional = computeFunctionalEvaluation(evaluation)
-                    const spiritual = computeSpiritualEvaluation(evaluation)
-                    const seen = recognitionSummaryForUser(profile.id, state.peerRecognitions)
-
-                    return (
-                      <Card key={profile.id} className="rounded-2xl">
-                        <CardContent className="space-y-2 p-4">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="font-semibold">{profile.full_name}</div>
-                              <div className="text-sm text-slate-500">ID {profile.id} · {profile.church || "-"}</div>
-                            </div>
-                            <Badge variant="secondary">
-                              {functional.answered === 48 && spiritual.answered === 30 ? "Completo" : "Pendiente"}
-                            </Badge>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-2 text-sm">
-                            <div>
-                              <div className="text-slate-500">Funcional</div>
-                              <div>{functional.top3[0]?.name || "-"}</div>
-                            </div>
-                            <div>
-                              <div className="text-slate-500">Espiritual</div>
-                              <div>{spiritual.top3[0]?.name || "-"}</div>
-                            </div>
-                            <div>
-                              <div className="text-slate-500">Otros ven</div>
-                              <div>{seen.top[0]?.name || "-"}</div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={connectSupabase}><Cloud className="mr-2 h-4 w-4" />Conectar Supabase</Button>
+                  <Button variant="secondary" onClick={switchToLocal}>Usar modo local</Button>
                 </div>
               </CardContent>
             </Card>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <FeatureCard icon={UserPlus} title="Usuarios" description="Crear, revisar y eliminar usuarios." onClick={() => setActiveTab("usuarios")} />
+              <FeatureCard icon={ClipboardCheck} title="Evaluar" description="Guardar evaluaciones funcionales y espirituales." onClick={() => setActiveTab("evaluar")} />
+              <FeatureCard icon={Users} title="Grupos" description="Agregar, editar, quitar miembros y eliminar grupos." onClick={() => setActiveTab("grupos")} />
+              <FeatureCard icon={BarChart3} title="Reportes" description="Por persona, grupo y concentrados exportables." onClick={() => setActiveTab("reportes")} />
+            </div>
           </TabsContent>
 
-          <TabsContent value="usuarios">
+          <TabsContent value="usuarios" className="space-y-4">
+            <SectionHeader
+              title="Usuarios"
+              description="Crear usuarios y administrar registros completos."
+              backTo="inicio"
+              onBack={() => setActiveTab("inicio")}
+              action={
+                <Button onClick={createProfile}>
+                  <Save className="mr-2 h-4 w-4" />
+                  Guardar usuario
+                </Button>
+              }
+            />
+
             <Card className="rounded-3xl">
               <CardHeader>
-                <CardTitle>Crear usuario</CardTitle>
-                <CardDescription>El sistema asigna ID automático y conserva la información para consultas futuras.</CardDescription>
+                <CardTitle>Captura de usuario</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
@@ -1506,9 +1446,7 @@ export default function Page() {
                 <div className="space-y-2">
                   <Label>Sexo</Label>
                   <Select value={userForm.sex} onValueChange={(value) => setUserForm({ ...userForm, sex: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar" />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Masculino">Masculino</SelectItem>
                       <SelectItem value="Femenino">Femenino</SelectItem>
@@ -1524,174 +1462,194 @@ export default function Page() {
                   <Label>Área o áreas de servicio</Label>
                   <Textarea value={userForm.service_areas} onChange={(e) => setUserForm({ ...userForm, service_areas: e.target.value })} />
                 </div>
-                <div className="flex justify-end md:col-span-2">
-                  <Button onClick={createProfile}>Crear usuario</Button>
-                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-3xl">
+              <CardHeader>
+                <CardTitle>Administrar usuarios</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {profiles.map((profile) => (
+                  <div key={profile.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4">
+                    <div>
+                      <div className="font-semibold">{profile.full_name}</div>
+                      <div className="text-sm text-slate-500">ID {profile.id} · {profile.church || "-"} · {profile.service_areas || "-"}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="secondary" onClick={() => { setSelectedProfileId(String(profile.id)); setActiveTab("reportes") }}>
+                        Ver reporte
+                      </Button>
+                      <Button variant="outline" onClick={() => { setSelectedProfileId(String(profile.id)); setActiveTab("evaluar") }}>
+                        Evaluar
+                      </Button>
+                      <Button variant="destructive" onClick={() => deleteProfile(profile.id)}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Eliminar usuario
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="evaluar" className="space-y-4">
+            <SectionHeader
+              title="Evaluación de usuario"
+              description="Selecciona la persona, captura y guarda en tiempo real."
+              backTo="inicio"
+              onBack={() => setActiveTab("inicio")}
+              action={
+                <Button variant="secondary" onClick={() => selectedProfileId && setActiveTab("reportes")}>
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Ir a reporte
+                </Button>
+              }
+            />
+
             <Card className="rounded-3xl">
-              <CardHeader>
-                <CardTitle>Evaluar usuario</CardTitle>
-                <CardDescription>
-                  La capa funcional usa 48 reactivos concretos: 4 preguntas por cada uno de los 12 dones funcionales.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Usuario</Label>
-                  <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar usuario" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {profiles.map((profile) => (
-                        <SelectItem key={profile.id} value={String(profile.id)}>
-                          {profile.id} · {profile.full_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {selectedProfile && selectedEvaluation && functionalReport && spiritualReport ? (
-                  <div className="space-y-4">
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <Card className="rounded-2xl">
-                        <CardHeader>
-                          <CardTitle className="text-base">Resumen funcional</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                            <Metric label="Contestadas" value={`${functionalReport.answered}/48`} />
-                            <Metric label="Confiabilidad" value={functionalReport.reliability} />
-                            <Metric label="Semáforo" value={functionalReport.semaphore} />
-                            <Metric label="Madurez" value={`${Math.round(functionalReport.maturityPct * 100)}%`} />
-                          </div>
-                        </CardContent>
-                      </Card>
-
-                      <Card className="rounded-2xl">
-                        <CardHeader>
-                          <CardTitle className="text-base">Resumen espiritual</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                            <Metric label="Contestadas" value={`${spiritualReport.answered}/30`} />
-                            <Metric label="Confiabilidad" value={spiritualReport.reliability} />
-                            <Metric label="Semáforo" value={spiritualReport.semaphore} />
-                            <Metric label="Madurez" value={`${Math.round(spiritualReport.maturityPct * 100)}%`} />
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    <Card className="rounded-2xl">
-                      <CardHeader>
-                        <CardTitle className="text-base">Capa funcional · 48 preguntas</CardTitle>
-                        <CardDescription>
-                          Cada don funcional tiene 4 preguntas: inclinación, disfrute, confirmación y fruto.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <ScrollArea className="h-[560px] pr-3">
-                          <div className="space-y-4">
-                            {FUNCTIONAL_GIFTS.map((gift) => {
-                              const giftQuestions = FUNCTIONAL_QUESTIONS.filter((q) => q.gift === gift)
-                              return (
-                                <div key={gift} className="rounded-2xl border p-4">
-                                  <div className="mb-3 flex items-center justify-between gap-3">
-                                    <div className="font-semibold">{gift}</div>
-                                    <Badge variant="secondary">
-                                      Total {functionalReport.scores[gift]}
-                                    </Badge>
-                                  </div>
-                                  <div className="space-y-3">
-                                    {giftQuestions.map((question, index) => (
-                                      <div key={question.id} className="grid grid-cols-[1fr_92px] gap-3 rounded-2xl border p-3">
-                                        <div>
-                                          <div className="mb-1 flex flex-wrap items-center gap-2">
-                                            <span className="text-xs text-slate-500">
-                                              {index + 1}. {FUNCTIONAL_DIMENSION_LABELS[question.dimension]}
-                                            </span>
-                                            <Badge variant="outline">{FUNCTIONAL_DIMENSION_LABELS[question.dimension]}</Badge>
-                                          </div>
-                                          <div className="text-sm">{question.text}</div>
-                                        </div>
-                                        <ScoreSelect
-                                          value={selectedEvaluation.functional_answers[question.id] ?? ""}
-                                          onChange={(value) => updateEvaluation(selectedProfile.id, "functional_answers", question.id, value)}
-                                        />
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </ScrollArea>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="rounded-2xl">
-                      <CardHeader>
-                        <CardTitle className="text-base">Capa espiritual · 30 preguntas</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <ScrollArea className="h-[560px] pr-3">
-                          <div className="space-y-4">
-                            {SPIRITUAL_GIFTS.map((gift) => {
-                              const giftQuestions = SPIRITUAL_QUESTIONS.filter((q) => q.gift === gift)
-                              return (
-                                <div key={gift} className="rounded-2xl border p-4">
-                                  <div className="mb-3 flex items-center justify-between gap-3">
-                                    <div className="font-semibold">{gift}</div>
-                                    <Badge variant="secondary">
-                                      Total {spiritualReport.scores[gift]}
-                                    </Badge>
-                                  </div>
-                                  <div className="space-y-3">
-                                    {giftQuestions.map((question, index) => (
-                                      <div key={question.id} className="grid grid-cols-[1fr_92px] gap-3 rounded-2xl border p-3">
-                                        <div>
-                                          <div className="mb-1 flex flex-wrap items-center gap-2">
-                                            <span className="text-xs text-slate-500">
-                                              {index + 1}. {SPIRITUAL_DIMENSION_LABELS[question.dimension]}
-                                            </span>
-                                            <Badge variant="outline">{SPIRITUAL_DIMENSION_LABELS[question.dimension]}</Badge>
-                                          </div>
-                                          <div className="text-sm">{question.text}</div>
-                                        </div>
-                                        <ScoreSelect
-                                          value={selectedEvaluation.spiritual_answers[question.id] ?? ""}
-                                          onChange={(value) => updateEvaluation(selectedProfile.id, "spiritual_answers", question.id, value)}
-                                        />
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </ScrollArea>
-                      </CardContent>
-                    </Card>
-                  </div>
-                ) : (
-                  <div className="text-sm text-slate-500">Selecciona una persona para capturar su evaluación.</div>
-                )}
+              <CardHeader><CardTitle>Seleccionar usuario</CardTitle></CardHeader>
+              <CardContent>
+                <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar usuario" /></SelectTrigger>
+                  <SelectContent>
+                    {profiles.map((profile) => (
+                      <SelectItem key={profile.id} value={String(profile.id)}>
+                        {profile.id} · {profile.full_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </CardContent>
             </Card>
+
+            {selectedProfile && selectedEvaluation && functionalReport && spiritualReport ? (
+              <>
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <Card className="rounded-2xl">
+                    <CardHeader><CardTitle className="text-base">Resumen funcional</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                        <Metric label="Contestadas" value={`${functionalReport.answered}/48`} percent={functionalReport.completionPct * 100} />
+                        <Metric label="Confiabilidad" value={functionalReport.reliability} percent={functionalReport.completionPct * 100} />
+                        <Metric label="Semáforo" value={functionalReport.semaphore} percent={functionalReport.maturityPct * 100} />
+                        <Metric label="Madurez" value={`${Math.round(functionalReport.maturityPct * 100)}%`} percent={functionalReport.maturityPct * 100} />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="rounded-2xl">
+                    <CardHeader><CardTitle className="text-base">Resumen espiritual</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                        <Metric label="Contestadas" value={`${spiritualReport.answered}/30`} percent={spiritualReport.completionPct * 100} />
+                        <Metric label="Confiabilidad" value={spiritualReport.reliability} percent={spiritualReport.completionPct * 100} />
+                        <Metric label="Semáforo" value={spiritualReport.semaphore} percent={spiritualReport.maturityPct * 100} />
+                        <Metric label="Madurez" value={`${Math.round(spiritualReport.maturityPct * 100)}%`} percent={spiritualReport.maturityPct * 100} />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card className="rounded-2xl">
+                  <CardHeader>
+                    <CardTitle className="text-base">Capa funcional · 48 preguntas</CardTitle>
+                    <CardDescription>El color de cada selector cambia según el valor 1–5.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[560px] pr-3">
+                      <div className="space-y-4">
+                        {FUNCTIONAL_GIFTS.map((gift) => {
+                          const giftQuestions = FUNCTIONAL_QUESTIONS.filter((q) => q.gift === gift)
+                          return (
+                            <div key={gift} className="rounded-2xl border p-4">
+                              <div className="mb-3 flex items-center justify-between gap-3">
+                                <div className="font-semibold">{gift}</div>
+                                <Badge className={getPercentBgClass((functionalReport.scores[gift] / 20) * 100)} variant="outline">
+                                  Total {functionalReport.scores[gift]}
+                                </Badge>
+                              </div>
+                              <div className="space-y-3">
+                                {giftQuestions.map((question, index) => (
+                                  <div key={question.id} className="grid grid-cols-[1fr_110px] gap-3 rounded-2xl border p-3">
+                                    <div>
+                                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                                        <span className="text-xs text-slate-500">{index + 1}. {FUNCTIONAL_DIMENSION_LABELS[question.dimension]}</span>
+                                        <Badge variant="outline">{FUNCTIONAL_DIMENSION_LABELS[question.dimension]}</Badge>
+                                      </div>
+                                      <div className="text-sm">{question.text}</div>
+                                    </div>
+                                    <ScoreSelect
+                                      value={selectedEvaluation.functional_answers[question.id] ?? ""}
+                                      onChange={(value) => updateEvaluation(selectedProfile.id, "functional_answers", question.id, value)}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+
+                <Card className="rounded-2xl">
+                  <CardHeader><CardTitle className="text-base">Capa espiritual · 30 preguntas</CardTitle></CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[560px] pr-3">
+                      <div className="space-y-4">
+                        {SPIRITUAL_GIFTS.map((gift) => {
+                          const giftQuestions = SPIRITUAL_QUESTIONS.filter((q) => q.gift === gift)
+                          return (
+                            <div key={gift} className="rounded-2xl border p-4">
+                              <div className="mb-3 flex items-center justify-between gap-3">
+                                <div className="font-semibold">{gift}</div>
+                                <Badge className={getPercentBgClass((spiritualReport.scores[gift] / 15) * 100)} variant="outline">
+                                  Total {spiritualReport.scores[gift]}
+                                </Badge>
+                              </div>
+                              <div className="space-y-3">
+                                {giftQuestions.map((question, index) => (
+                                  <div key={question.id} className="grid grid-cols-[1fr_110px] gap-3 rounded-2xl border p-3">
+                                    <div>
+                                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                                        <span className="text-xs text-slate-500">{index + 1}. {SPIRITUAL_DIMENSION_LABELS[question.dimension]}</span>
+                                        <Badge variant="outline">{SPIRITUAL_DIMENSION_LABELS[question.dimension]}</Badge>
+                                      </div>
+                                      <div className="text-sm">{question.text}</div>
+                                    </div>
+                                    <ScoreSelect
+                                      value={selectedEvaluation.spiritual_answers[question.id] ?? ""}
+                                      onChange={(value) => updateEvaluation(selectedProfile.id, "spiritual_answers", question.id, value)}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </>
+            ) : null}
           </TabsContent>
 
           <TabsContent value="grupos" className="space-y-4">
+            <SectionHeader
+              title="Control de grupos"
+              description="Crear, actualizar miembros, quitar usuarios y eliminar grupos completos."
+              backTo="inicio"
+              onBack={() => setActiveTab("inicio")}
+            />
+
             <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
               <Card className="rounded-3xl">
                 <CardHeader>
                   <CardTitle>Crear grupo</CardTitle>
-                  <CardDescription>Un usuario puede pertenecer a varios grupos. Máximo 300 integrantes por grupo.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
@@ -1714,9 +1672,7 @@ export default function Page() {
                                 )
                               }}
                             />
-                            <span className="text-sm">
-                              {profile.id} · {profile.full_name}
-                            </span>
+                            <span className="text-sm">{profile.id} · {profile.full_name}</span>
                           </label>
                         ))}
                       </div>
@@ -1724,31 +1680,79 @@ export default function Page() {
                   </div>
 
                   <Button className="w-full" onClick={createGroup}>
-                    Crear grupo
+                    <Save className="mr-2 h-4 w-4" />
+                    Guardar grupo
                   </Button>
                 </CardContent>
               </Card>
 
               <Card className="rounded-3xl">
-                <CardHeader>
-                  <CardTitle>Grupos creados</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
+                <CardHeader><CardTitle>Administrar grupos existentes</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
                   {state.groups.map((group) => (
-                    <div key={group.id} className="flex items-center justify-between rounded-2xl border p-4">
-                      <div>
-                        <div className="font-semibold">{group.name}</div>
-                        <div className="text-sm text-slate-500">{group.memberIds.length} miembros</div>
+                    <div key={group.id} className="space-y-3 rounded-2xl border p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold">{group.name}</div>
+                          <div className="text-sm text-slate-500">
+                            {group.memberIds.length} miembros · {group.memberIds.map((id) => profiles.find((p) => p.id === id)?.full_name).filter(Boolean).join(", ")}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button variant="secondary" onClick={() => { setSelectedGroupId(String(group.id)); setActiveTab("reportes") }}>
+                            Ver reporte
+                          </Button>
+                          <Button variant="outline" onClick={() => startEditGroup(group)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Editar
+                          </Button>
+                          <Button variant="destructive" onClick={() => deleteGroup(group.id)}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Eliminar grupo
+                          </Button>
+                        </div>
                       </div>
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          setSelectedGroupId(String(group.id))
-                          setActiveTab("reportes")
-                        }}
-                      >
-                        Ver reporte
-                      </Button>
+
+                      {editingGroupId === String(group.id) ? (
+                        <div className="space-y-3 rounded-2xl border bg-slate-50 p-4">
+                          <div className="space-y-2">
+                            <Label>Nombre del grupo</Label>
+                            <Input value={editingGroupName} onChange={(e) => setEditingGroupName(e.target.value)} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Actualizar miembros del grupo</Label>
+                            <ScrollArea className="h-56 rounded-2xl border bg-white p-3">
+                              <div className="space-y-3">
+                                {profiles.map((profile) => (
+                                  <label key={profile.id} className="flex items-start gap-3">
+                                    <Checkbox
+                                      checked={editingGroupMembers.includes(profile.id)}
+                                      onCheckedChange={(checked) => {
+                                        const isChecked = Boolean(checked)
+                                        setEditingGroupMembers((prev) =>
+                                          isChecked
+                                            ? [...new Set([...prev, profile.id])].slice(0, 300)
+                                            : prev.filter((x) => x !== profile.id),
+                                        )
+                                      }}
+                                    />
+                                    <span className="text-sm">{profile.id} · {profile.full_name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </ScrollArea>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button onClick={saveGroupEdit}>
+                              <Save className="mr-2 h-4 w-4" />
+                              Guardar cambios
+                            </Button>
+                            <Button variant="secondary" onClick={() => { setEditingGroupId(""); setEditingGroupName(""); setEditingGroupMembers([]) }}>
+                              Cancelar
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </CardContent>
@@ -1757,18 +1761,25 @@ export default function Page() {
           </TabsContent>
 
           <TabsContent value="confirmar" className="space-y-4">
+            <SectionHeader
+              title="Dones que veo en..."
+              description="Confirma dones observados en otras personas registradas."
+              backTo="inicio"
+              onBack={() => setActiveTab("inicio")}
+              action={
+                <Button onClick={saveRecognition}>
+                  <Save className="mr-2 h-4 w-4" />
+                  Guardar confirmación
+                </Button>
+              }
+            />
+
             <Card className="rounded-3xl">
-              <CardHeader>
-                <CardTitle>Dones que veo en...</CardTitle>
-                <CardDescription>Cada usuario puede identificar dones que percibe en otras personas del sistema.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
+              <CardContent className="grid gap-4 pt-6 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Quién confirma</Label>
                   <Select value={fromProfileId} onValueChange={setFromProfileId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar" />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                     <SelectContent>
                       {profiles.map((profile) => (
                         <SelectItem key={profile.id} value={String(profile.id)}>
@@ -1782,9 +1793,7 @@ export default function Page() {
                 <div className="space-y-2">
                   <Label>Persona observada</Label>
                   <Select value={toProfileId} onValueChange={setToProfileId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar" />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                     <SelectContent>
                       {profiles
                         .filter((profile) => String(profile.id) !== fromProfileId)
@@ -1816,27 +1825,26 @@ export default function Page() {
                     </div>
                   </ScrollArea>
                 </div>
-
-                <div className="flex justify-end md:col-span-2">
-                  <Button onClick={saveRecognition}>Guardar confirmación</Button>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="reportes" className="space-y-4">
+            <SectionHeader
+              title="Reportes por persona y por grupo"
+              description="Selecciona claramente qué persona o qué grupo deseas analizar."
+              backTo="inicio"
+              onBack={() => setActiveTab("inicio")}
+            />
+
             <div className="grid gap-4 xl:grid-cols-[340px_1fr]">
               <Card className="rounded-3xl">
-                <CardHeader>
-                  <CardTitle>Selector de reportes</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>Selector de reportes</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Persona</Label>
+                    <Label>Persona para reporte</Label>
                     <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar persona" />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar persona" /></SelectTrigger>
                       <SelectContent>
                         {profiles.map((profile) => (
                           <SelectItem key={profile.id} value={String(profile.id)}>
@@ -1848,11 +1856,9 @@ export default function Page() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Grupo</Label>
+                    <Label>Grupo para reporte</Label>
                     <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar grupo" />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar grupo" /></SelectTrigger>
                       <SelectContent>
                         {state.groups.map((group) => (
                           <SelectItem key={group.id} value={String(group.id)}>
@@ -1867,136 +1873,148 @@ export default function Page() {
 
               <div className="space-y-4">
                 {selectedProfile && functionalReport && spiritualReport && peerSummary ? (
-                  <Card className="rounded-3xl">
-                    <CardHeader>
-                      <CardTitle>Reporte individual · {selectedProfile.full_name}</CardTitle>
-                      <CardDescription>
-                        ID {selectedProfile.id} · {selectedProfile.church || "-"} · {selectedProfile.service_areas || "-"}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                      <div className="grid gap-3 md:grid-cols-4">
-                        <Metric label="Confiabilidad" value={functionalReport.reliability} />
-                        <Metric label="Semáforo" value={functionalReport.semaphore} />
-                        <Metric label="Funcional" value={`${Math.round(functionalReport.completionPct * 100)}%`} />
-                        <Metric label="Espiritual" value={`${Math.round(spiritualReport.completionPct * 100)}%`} />
-                      </div>
+                  <div ref={personReportRef}>
+                    <Card className="rounded-3xl">
+                      <CardHeader>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <CardTitle>Reporte individual · {selectedProfile.full_name}</CardTitle>
+                            <CardDescription>
+                              ID {selectedProfile.id} · {selectedProfile.church || "-"} · {selectedProfile.service_areas || "-"}
+                            </CardDescription>
+                          </div>
+                          <Button
+                            variant="outline"
+                            onClick={() => exportRefToPdf(personReportRef.current, `Reporte_${selectedProfile.full_name.replace(/\s+/g, "_")}`)}
+                          >
+                            <Download className="mr-2 h-4 w-4" />
+                            Exportar PDF
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-5">
+                        <div className="grid gap-3 md:grid-cols-4">
+                          <Metric label="Confiabilidad" value={functionalReport.reliability} percent={functionalReport.completionPct * 100} />
+                          <Metric label="Semáforo" value={functionalReport.semaphore} percent={functionalReport.maturityPct * 100} />
+                          <Metric label="Funcional" value={`${Math.round(functionalReport.completionPct * 100)}%`} percent={functionalReport.completionPct * 100} />
+                          <Metric label="Espiritual" value={`${Math.round(spiritualReport.completionPct * 100)}%`} percent={spiritualReport.completionPct * 100} />
+                        </div>
 
-                      <div className="grid gap-4 xl:grid-cols-3">
-                        <TopCard title="Top funcional" items={functionalReport.top3} />
-                        <TopCard title="Top espiritual" items={spiritualReport.top3} />
-                        <TopCard title="Los dones que otros ven en mí" items={peerSummary.top.slice(0, 10)} />
-                      </div>
+                        <div className="grid gap-4 xl:grid-cols-3">
+                          <TopCard title="Top funcional" items={functionalReport.top3} />
+                          <TopCard title="Top espiritual" items={spiritualReport.top3} />
+                          <TopCard title="Los dones que otros ven en mí" items={peerSummary.top.slice(0, 10)} />
+                        </div>
 
-                      <div className="grid gap-4 xl:grid-cols-2">
-                        <GiftTable
-                          title="Clasificación funcional"
-                          entries={Object.entries(functionalReport.scores).sort((a, b) => b[1] - a[1])}
-                          max={20}
-                        />
-                        <GiftTable
-                          title="Clasificación espiritual"
-                          entries={Object.entries(spiritualReport.scores).sort((a, b) => b[1] - a[1])}
-                          max={15}
-                        />
-                      </div>
+                        <div className="grid gap-4 xl:grid-cols-2">
+                          <GiftTable title="Clasificación funcional" entries={Object.entries(functionalReport.scores).sort((a, b) => b[1] - a[1])} max={20} />
+                          <GiftTable title="Clasificación espiritual" entries={Object.entries(spiritualReport.scores).sort((a, b) => b[1] - a[1])} max={15} />
+                        </div>
 
-                      <Card className="rounded-2xl border-dashed">
-                        <CardHeader>
-                          <CardTitle className="text-base">Rubros globales funcionales</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                          <Metric label="Inclinación" value={`${Math.round(functionalReport.globalDimensions.inclinacion * 100)}%`} />
-                          <Metric label="Disfrute" value={`${Math.round(functionalReport.globalDimensions.disfrute * 100)}%`} />
-                          <Metric label="Confirmación" value={`${Math.round(functionalReport.globalDimensions.confirmacion * 100)}%`} />
-                          <Metric label="Fruto" value={`${Math.round(functionalReport.globalDimensions.fruto * 100)}%`} />
-                        </CardContent>
-                      </Card>
+                        <Card className="rounded-2xl border-dashed">
+                          <CardHeader><CardTitle className="text-base">Rubros globales funcionales</CardTitle></CardHeader>
+                          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                            <Metric label="Inclinación" value={`${Math.round(functionalReport.globalDimensions.inclinacion * 100)}%`} percent={functionalReport.globalDimensions.inclinacion * 100} />
+                            <Metric label="Disfrute" value={`${Math.round(functionalReport.globalDimensions.disfrute * 100)}%`} percent={functionalReport.globalDimensions.disfrute * 100} />
+                            <Metric label="Confirmación" value={`${Math.round(functionalReport.globalDimensions.confirmacion * 100)}%`} percent={functionalReport.globalDimensions.confirmacion * 100} />
+                            <Metric label="Fruto" value={`${Math.round(functionalReport.globalDimensions.fruto * 100)}%`} percent={functionalReport.globalDimensions.fruto * 100} />
+                          </CardContent>
+                        </Card>
 
-                      <Card className="rounded-2xl border-dashed">
-                        <CardHeader>
-                          <CardTitle className="text-base">Rubros globales espirituales</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid gap-3 md:grid-cols-3">
-                          <Metric label="Sensibilidad" value={`${Math.round(spiritualReport.globalDimensions.sensibilidad * 100)}%`} />
-                          <Metric label="Fruto" value={`${Math.round(spiritualReport.globalDimensions.fruto * 100)}%`} />
-                          <Metric label="Confirmación" value={`${Math.round(spiritualReport.globalDimensions.confirmacion * 100)}%`} />
-                        </CardContent>
-                      </Card>
-                    </CardContent>
-                  </Card>
+                        <Card className="rounded-2xl border-dashed">
+                          <CardHeader><CardTitle className="text-base">Rubros globales espirituales</CardTitle></CardHeader>
+                          <CardContent className="grid gap-3 md:grid-cols-3">
+                            <Metric label="Sensibilidad" value={`${Math.round(spiritualReport.globalDimensions.sensibilidad * 100)}%`} percent={spiritualReport.globalDimensions.sensibilidad * 100} />
+                            <Metric label="Fruto" value={`${Math.round(spiritualReport.globalDimensions.fruto * 100)}%`} percent={spiritualReport.globalDimensions.fruto * 100} />
+                            <Metric label="Confirmación" value={`${Math.round(spiritualReport.globalDimensions.confirmacion * 100)}%`} percent={spiritualReport.globalDimensions.confirmacion * 100} />
+                          </CardContent>
+                        </Card>
+                      </CardContent>
+                    </Card>
+                  </div>
                 ) : null}
 
                 {selectedGroup && groupReport ? (
-                  <Card className="rounded-3xl">
-                    <CardHeader>
-                      <CardTitle>Reporte grupal · {selectedGroup.name}</CardTitle>
-                      <CardDescription>
-                        {groupReport.members.length} miembros · {groupReport.completeMembers.length} completos
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                      <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
-                        <Metric label="Miembros" value={groupReport.members.length} />
-                        <Metric label="Completos" value={groupReport.completeMembers.length} />
-                        <Metric label="Verde" value={groupReport.semaphores.Verde || 0} />
-                        <Metric label="Alta" value={groupReport.reliabilities.Alta || 0} />
-                        <Metric label="Amarillo" value={groupReport.semaphores.Amarillo || 0} />
-                        <Metric label="Rojo" value={groupReport.semaphores.Rojo || 0} />
-                      </div>
+                  <div ref={groupReportRef}>
+                    <Card className="rounded-3xl">
+                      <CardHeader>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <CardTitle>Reporte grupal · {selectedGroup.name}</CardTitle>
+                            <CardDescription>
+                              {groupReport.members.length} miembros · {groupReport.completeMembers.length} completos
+                            </CardDescription>
+                          </div>
+                          <Button
+                            variant="outline"
+                            onClick={() => exportRefToPdf(groupReportRef.current, `Reporte_Grupo_${selectedGroup.name.replace(/\s+/g, "_")}`)}
+                          >
+                            <Download className="mr-2 h-4 w-4" />
+                            Exportar PDF
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-5">
+                        <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
+                          <Metric label="Miembros" value={groupReport.members.length} />
+                          <Metric label="Completos" value={groupReport.completeMembers.length} />
+                          <Metric label="Verde" value={groupReport.semaphores.Verde || 0} />
+                          <Metric label="Alta" value={groupReport.reliabilities.Alta || 0} />
+                          <Metric label="Amarillo" value={groupReport.semaphores.Amarillo || 0} />
+                          <Metric label="Rojo" value={groupReport.semaphores.Rojo || 0} />
+                        </div>
 
-                      <div className="grid gap-4 xl:grid-cols-3">
-                        <GiftTable
-                          title="Top funcional del grupo"
-                          entries={Object.entries(groupReport.functionalAgg).sort((a, b) => b[1] - a[1]).slice(0, 12)}
-                          max={Math.max(...Object.values(groupReport.functionalAgg), 1)}
-                        />
-                        <GiftTable
-                          title="Top espiritual del grupo"
-                          entries={Object.entries(groupReport.spiritualAgg).sort((a, b) => b[1] - a[1]).slice(0, 10)}
-                          max={Math.max(...Object.values(groupReport.spiritualAgg), 1)}
-                        />
-                        <GiftTable
-                          title="Top 22 del grupo"
-                          entries={groupReport.top22.map((x) => [x.name, x.score])}
-                          max={groupReport.top22[0]?.score || 1}
-                        />
-                      </div>
+                        <div className="grid gap-4 xl:grid-cols-3">
+                          <GiftTable title="Top funcional del grupo" entries={Object.entries(groupReport.functionalAgg).sort((a, b) => b[1] - a[1]).slice(0, 12)} max={Math.max(...Object.values(groupReport.functionalAgg), 1)} />
+                          <GiftTable title="Top espiritual del grupo" entries={Object.entries(groupReport.spiritualAgg).sort((a, b) => b[1] - a[1]).slice(0, 10)} max={Math.max(...Object.values(groupReport.spiritualAgg), 1)} />
+                          <GiftTable title="Top 22 del grupo" entries={groupReport.top22.map((x) => [x.name, x.score])} max={groupReport.top22[0]?.score || 1} />
+                        </div>
 
-                      <div className="grid gap-4 xl:grid-cols-2">
-                        <GiftTable
-                          title="Dones más confirmados por terceros"
-                          entries={groupReport.topConfirmations.map((x) => [x.name, x.score])}
-                          max={groupReport.topConfirmations[0]?.score || 1}
-                        />
+                        <div className="grid gap-4 xl:grid-cols-2">
+                          <GiftTable title="Dones más confirmados por terceros" entries={groupReport.topConfirmations.map((x) => [x.name, x.score])} max={groupReport.topConfirmations[0]?.score || 1} />
+                          <Card className="rounded-2xl">
+                            <CardHeader><CardTitle className="text-base">Promedios funcionales del grupo</CardTitle></CardHeader>
+                            <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                              <Metric label="Inclinación" value={`${Math.round(groupReport.functionalDimensionsAvg.inclinacion * 100)}%`} percent={groupReport.functionalDimensionsAvg.inclinacion * 100} />
+                              <Metric label="Disfrute" value={`${Math.round(groupReport.functionalDimensionsAvg.disfrute * 100)}%`} percent={groupReport.functionalDimensionsAvg.disfrute * 100} />
+                              <Metric label="Confirmación" value={`${Math.round(groupReport.functionalDimensionsAvg.confirmacion * 100)}%`} percent={groupReport.functionalDimensionsAvg.confirmacion * 100} />
+                              <Metric label="Fruto" value={`${Math.round(groupReport.functionalDimensionsAvg.fruto * 100)}%`} percent={groupReport.functionalDimensionsAvg.fruto * 100} />
+                            </CardContent>
+                          </Card>
+                        </div>
+
                         <Card className="rounded-2xl">
-                          <CardHeader>
-                            <CardTitle className="text-base">Promedios funcionales del grupo</CardTitle>
-                          </CardHeader>
-                          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                            <Metric label="Inclinación" value={`${Math.round(groupReport.functionalDimensionsAvg.inclinacion * 100)}%`} />
-                            <Metric label="Disfrute" value={`${Math.round(groupReport.functionalDimensionsAvg.disfrute * 100)}%`} />
-                            <Metric label="Confirmación" value={`${Math.round(groupReport.functionalDimensionsAvg.confirmacion * 100)}%`} />
-                            <Metric label="Fruto" value={`${Math.round(groupReport.functionalDimensionsAvg.fruto * 100)}%`} />
+                          <CardHeader><CardTitle className="text-base">Promedios espirituales del grupo</CardTitle></CardHeader>
+                          <CardContent className="grid gap-3 md:grid-cols-3">
+                            <Metric label="Sensibilidad" value={`${Math.round(groupReport.spiritualDimensionsAvg.sensibilidad * 100)}%`} percent={groupReport.spiritualDimensionsAvg.sensibilidad * 100} />
+                            <Metric label="Fruto" value={`${Math.round(groupReport.spiritualDimensionsAvg.fruto * 100)}%`} percent={groupReport.spiritualDimensionsAvg.fruto * 100} />
+                            <Metric label="Confirmación" value={`${Math.round(groupReport.spiritualDimensionsAvg.confirmacion * 100)}%`} percent={groupReport.spiritualDimensionsAvg.confirmacion * 100} />
                           </CardContent>
                         </Card>
-                      </div>
-
-                      <Card className="rounded-2xl">
-                        <CardHeader>
-                          <CardTitle className="text-base">Promedios espirituales del grupo</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid gap-3 md:grid-cols-3">
-                          <Metric label="Sensibilidad" value={`${Math.round(groupReport.spiritualDimensionsAvg.sensibilidad * 100)}%`} />
-                          <Metric label="Fruto" value={`${Math.round(groupReport.spiritualDimensionsAvg.fruto * 100)}%`} />
-                          <Metric label="Confirmación" value={`${Math.round(groupReport.spiritualDimensionsAvg.confirmacion * 100)}%`} />
-                        </CardContent>
-                      </Card>
-                    </CardContent>
-                  </Card>
+                      </CardContent>
+                    </Card>
+                  </div>
                 ) : null}
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="concentrados" className="space-y-4">
+            <SectionHeader
+              title="Reportes concentrados por dones"
+              description="Vista global por dones funcionales, espirituales y confirmación."
+              backTo="inicio"
+              onBack={() => setActiveTab("inicio")}
+            />
+
+            <Card className="rounded-3xl">
+              <CardContent className="grid gap-4 pt-6 xl:grid-cols-2">
+                <GiftTable title="Concentrado funcional" entries={concentrated.functionalTop.map((x) => [x.name, x.score])} max={concentrated.functionalTop[0]?.score || 1} />
+                <GiftTable title="Concentrado espiritual" entries={concentrated.spiritualTop.map((x) => [x.name, x.score])} max={concentrated.spiritualTop[0]?.score || 1} />
+                <GiftTable title="Top 22 general" entries={concentrated.allTop.map((x) => [x.name, x.score])} max={concentrated.allTop[0]?.score || 1} />
+                <GiftTable title="Confirmación por terceros" entries={concentrated.recognitionsTop.map((x) => [x.name, x.score])} max={concentrated.recognitionsTop[0]?.score || 1} />
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
