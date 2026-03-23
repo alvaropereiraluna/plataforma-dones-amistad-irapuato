@@ -133,6 +133,8 @@ const SPIRITUAL_GIFTS = [
 
 const ALL_GIFTS = [...FUNCTIONAL_GIFTS, ...SPIRITUAL_GIFTS]
 
+const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v7"
+
 const FUNCTIONAL_DIMENSION_LABELS: Record<FunctionalDimension, string> = {
   inclinacion: "Inclinación",
   disfrute: "Disfrute",
@@ -883,7 +885,7 @@ export default function Page() {
           })
           return
         } catch {
-          // ignore and fallback
+          // fallback
         }
       }
 
@@ -929,10 +931,6 @@ export default function Page() {
   const peerSummary = selectedProfile ? recognitionSummaryForUser(selectedProfile.id, state.peerRecognitions) : null
   const groupReport = selectedGroup ? buildGroupReport(selectedGroup, state.profiles, state.evaluations, state.peerRecognitions) : null
   const giftReport = selectedGroup && selectedGift ? buildGiftInGroupReport(selectedGroup, selectedGift, state.profiles, state.evaluations, state.peerRecognitions) : null
-
-  const filteredProfiles = profiles.filter((p) =>
-    `${p.full_name} ${p.church || ""} ${p.service_areas || ""}`.toLowerCase().includes(search.toLowerCase()),
-  )
 
   async function exportRefToPdf(element: HTMLDivElement | null, fileName: string) {
     if (!element) return
@@ -1263,6 +1261,10 @@ export default function Page() {
     flashSaved("Confirmación guardada correctamente")
   }
 
+  const filteredProfiles = profiles.filter((p) =>
+    `${p.full_name} ${p.church || ""} ${p.service_areas || ""}`.toLowerCase().includes(search.toLowerCase()),
+  )
+
   return (
     <div className="min-h-screen bg-slate-50 p-3 md:p-6">
       <div className="mx-auto max-w-7xl space-y-4">
@@ -1270,7 +1272,7 @@ export default function Page() {
           <CardContent className="p-5 md:p-7">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · v7</div>
+                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · v7 corregida</div>
                 <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                   Sistema multiusuario de dones funcionales y espirituales
                 </h1>
