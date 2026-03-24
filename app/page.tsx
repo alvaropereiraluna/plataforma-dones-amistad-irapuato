@@ -19,8 +19,6 @@ import {
   ArrowLeft,
   BarChart3,
   ClipboardCheck,
-  Cloud,
-  Database,
   Download,
   Pencil,
   Save,
@@ -99,7 +97,7 @@ type ConnectionState = {
   message: string
 }
 
-const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v9"
+const STORAGE_KEY = "plataforma-dones-amistad-irapuato-v11"
 
 const FUNCTIONAL_GIFTS = [
   "Enseñanza",
@@ -514,6 +512,61 @@ function buildGiftInGroupReport(group: Group, gift: string, profiles: Profile[],
   }
 }
 
+function interpretPerson(
+  profile: Profile,
+  functionalTop: Array<{ name: string; score: number }>,
+  spiritualTop: Array<{ name: string; score: number }>,
+  seenByOthers: Array<{ name: string; score: number }>,
+) {
+  const f1 = functionalTop[0]?.name || "Sin dato"
+  const f2 = functionalTop[1]?.name || "Sin dato"
+  const s1 = spiritualTop[0]?.name || "Sin dato"
+  const s2 = spiritualTop[1]?.name || "Sin dato"
+  const c1 = seenByOthers[0]?.name || "Sin confirmación externa"
+
+  return {
+    technical: `El perfil de ${profile.full_name} presenta mayor fortaleza funcional en ${f1}${f2 !== "Sin dato" ? ` y ${f2}` : ""}, con acentos espirituales en ${s1}${s2 !== "Sin dato" ? ` y ${s2}` : ""}. La confirmación comunitaria más visible apunta a ${c1}.`,
+    ministerial: `En lectura ministerial, este perfil parece apto para servir donde pueda combinar gracia funcional y madurez espiritual. Conviene observar continuidad, fruto, confirmación comunitaria y disposición al servicio antes de consolidar una ubicación estable.`,
+    recommendations: [
+      `Ubicar inicialmente en espacios donde pueda ejercer ${f1}.`,
+      s1 !== "Sin dato" ? `Acompañar su desarrollo espiritual en ${s1}.` : "Fortalecer acompañamiento espiritual y seguimiento.",
+      c1 !== "Sin confirmación externa" ? `Tomar en cuenta la confirmación comunitaria en ${c1}.` : "Promover más observación y retroalimentación del grupo.",
+    ],
+  }
+}
+
+function interpretGroup(
+  groupName: string,
+  top22: Array<{ name: string; score: number }>,
+  confirmations: Array<{ name: string; score: number }>,
+) {
+  const g1 = top22[0]?.name || "Sin dato"
+  const g2 = top22[1]?.name || "Sin dato"
+  const c1 = confirmations[0]?.name || "Sin confirmaciones destacadas"
+
+  return {
+    technical: `El grupo ${groupName} concentra mayor peso en ${g1}${g2 !== "Sin dato" ? ` y ${g2}` : ""}. En validación comunitaria sobresale ${c1}, lo que sugiere una identidad grupal relativamente definida.`,
+    ministerial: `Ministerialmente, este grupo muestra potencial para operar con mayor cohesión si fortalece los dones predominantes y acompaña los menos visibles, procurando equilibrio entre dirección, cuidado, servicio y fruto espiritual.`,
+    recommendations: [
+      `Consolidar funciones donde el grupo ya muestra fortaleza en ${g1}.`,
+      "Detectar dones menos visibles para no depender siempre de los mismos perfiles.",
+      "Usar la confirmación externa como criterio adicional para ordenar responsabilidades.",
+    ],
+  }
+}
+
+function interpretGift(groupName: string, gift: string, totalScore: number, totalConfirmations: number) {
+  return {
+    technical: `Dentro del grupo ${groupName}, el don ${gift} presenta un puntaje acumulado de ${totalScore} y ${totalConfirmations} confirmaciones. Esto ayuda a distinguir perfiles fuertes, perfiles emergentes y necesidades de formación.`,
+    ministerial: `En lectura ministerial, ${gift} debe reconocerse no solo por intensidad, sino por fruto, humildad, servicio y confirmación comunitaria. Un don fuerte necesita encauce, acompañamiento y contexto correcto.`,
+    recommendations: [
+      `Reconocer a quienes muestran mayor consistencia en ${gift}.`,
+      "Acompañar a quienes tienen puntaje medio pero potencial evidente.",
+      "Cruzar puntaje, fruto y confirmación antes de asignar responsabilidades estables.",
+    ],
+  }
+}
+
 function buildLocalAdapter(setState: (state: AppState) => void) {
   return {
     mode: "local" as const,
@@ -557,7 +610,6 @@ function buildSupabaseAdapter(url: string, anonKey: string, setState: (state: Ap
       if (recognitionsRes.error) throw recognitionsRes.error
 
       const evalMap = Object.fromEntries((evaluationsRes.data || []).map((ev) => [ev.profile_id, ev])) as Record<number, Evaluation>
-
       const groups = (groupsRes.data || []).map((g) => ({
         ...g,
         memberIds: (membersRes.data || []).filter((m) => m.group_id === g.id).map((m) => m.profile_id),
@@ -670,6 +722,14 @@ function createPdf(title: string) {
     line(`${label}: ${value}`, 10, false)
   }
 
+  const bullets = (items: string[]) => {
+    items.forEach((item) => line(`• ${item}`, 10, false))
+  }
+
+  const paragraph = (text: string) => {
+    line(text, 10, false)
+  }
+
   const table = (headers: string[], rows: string[][], colWidths?: number[]) => {
     const widths =
       colWidths && colWidths.length === headers.length
@@ -698,10 +758,11 @@ function createPdf(title: string) {
     y += 3
   }
 
-  line(title, 16, true)
+  line(title, 17, true)
+  line("Plataforma Dones Amistad Irapuato", 11, false)
   divider()
 
-  return { pdf, save: (fileName: string) => pdf.save(fileName), kv, section, table }
+  return { save: (fileName: string) => pdf.save(fileName), kv, section, bullets, paragraph, table }
 }
 
 function exportPersonReportPdf(input: {
@@ -717,8 +778,9 @@ function exportPersonReportPdf(input: {
   seenByOthers: Array<{ name: string; score: number }>
   functionalScores: Array<[string, number]>
   spiritualScores: Array<[string, number]>
+  interpretation: ReturnType<typeof interpretPerson>
 }) {
-  const doc = createPdf("Reporte individual de dones")
+  const doc = createPdf("Reporte individual híbrido de dones")
   doc.kv("Fecha de generación", input.generatedAt)
   doc.kv("Nombre", input.profile.full_name)
   doc.kv("ID", String(input.profile.id))
@@ -727,11 +789,20 @@ function exportPersonReportPdf(input: {
   doc.kv("Iglesia", input.profile.church || "-")
   doc.kv("Área de servicio", input.profile.service_areas || "-")
 
-  doc.section("Resumen general")
+  doc.section("Resumen ejecutivo")
   doc.kv("Confiabilidad", input.reliability)
   doc.kv("Semáforo", input.semaphore)
   doc.kv("Avance funcional", `${Math.round(input.functionalCompletion)}%`)
   doc.kv("Avance espiritual", `${Math.round(input.spiritualCompletion)}%`)
+
+  doc.section("Lectura técnica")
+  doc.paragraph(input.interpretation.technical)
+
+  doc.section("Lectura ministerial")
+  doc.paragraph(input.interpretation.ministerial)
+
+  doc.section("Recomendaciones")
+  doc.bullets(input.interpretation.recommendations)
 
   doc.section("Top funcional")
   doc.table(["Don", "Puntaje"], input.topFunctional.map((x) => [x.name, String(x.score)]), [150, 32])
@@ -761,12 +832,22 @@ function exportGroupReportPdf(input: {
   confirmations: Array<{ name: string; score: number }>
   functionalAgg: Array<[string, number]>
   spiritualAgg: Array<[string, number]>
+  interpretation: ReturnType<typeof interpretGroup>
 }) {
-  const doc = createPdf("Reporte grupal de dones")
+  const doc = createPdf("Reporte grupal híbrido de dones")
   doc.kv("Fecha de generación", input.generatedAt)
   doc.kv("Grupo", input.groupName)
   doc.kv("Miembros", String(input.members))
   doc.kv("Miembros completos", String(input.completeMembers))
+
+  doc.section("Lectura técnica")
+  doc.paragraph(input.interpretation.technical)
+
+  doc.section("Lectura ministerial")
+  doc.paragraph(input.interpretation.ministerial)
+
+  doc.section("Recomendaciones")
+  doc.bullets(input.interpretation.recommendations)
 
   doc.section("Top 22 del grupo")
   doc.table(["Don", "Puntaje"], input.top22.map((x) => [x.name, String(x.score)]), [150, 32])
@@ -799,14 +880,24 @@ function exportGiftInGroupPdf(input: {
     completion: number
     semaphore: string
   }>
+  interpretation: ReturnType<typeof interpretGift>
 }) {
-  const doc = createPdf("Reporte por don dentro del grupo")
+  const doc = createPdf("Reporte híbrido por don dentro del grupo")
   doc.kv("Fecha de generación", input.generatedAt)
   doc.kv("Grupo", input.groupName)
   doc.kv("Don", input.gift)
   doc.kv("Puntaje total", String(input.totalScore))
   doc.kv("Confirmaciones", String(input.totalConfirmations))
   doc.kv("Promedio completado", `${Math.round(input.avgCompletion)}%`)
+
+  doc.section("Lectura técnica")
+  doc.paragraph(input.interpretation.technical)
+
+  doc.section("Lectura ministerial")
+  doc.paragraph(input.interpretation.ministerial)
+
+  doc.section("Recomendaciones")
+  doc.bullets(input.interpretation.recommendations)
 
   doc.section("Detalle por miembro")
   doc.table(
@@ -992,6 +1083,23 @@ function TopCard({
   )
 }
 
+function InterpretationCard({
+  title,
+  body,
+}: {
+  title: string
+  body: string
+}) {
+  return (
+    <Card className="rounded-2xl">
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm text-slate-700">{body}</CardContent>
+    </Card>
+  )
+}
+
 export default function Page() {
   const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
   const envKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
@@ -1007,14 +1115,12 @@ export default function Page() {
   const [selectedGift, setSelectedGift] = useState("")
   const [search, setSearch] = useState("")
 
-  const [supabaseUrl, setSupabaseUrl] = useState(envUrl)
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState(envKey)
-  const [connectionState, setConnectionState] = useState<ConnectionState>({
+  const [saveMessage, setSaveMessage] = useState("")
+  const [, setConnectionState] = useState<ConnectionState>({
     connected: false,
     mode: "local",
     message: "Inicializando conexión...",
   })
-  const [saveMessage, setSaveMessage] = useState("")
 
   const [userForm, setUserForm] = useState({
     full_name: "",
@@ -1050,7 +1156,7 @@ export default function Page() {
           setConnectionState({
             connected: true,
             mode: "supabase",
-            message: "Conectado a Supabase. Multiusuario y persistencia activados.",
+            message: "Conectado a Supabase",
           })
           return
         } catch {
@@ -1101,6 +1207,21 @@ export default function Page() {
   const groupReport = selectedGroup ? buildGroupReport(selectedGroup, state.profiles, state.evaluations, state.peerRecognitions) : null
   const giftReport = selectedGroup && selectedGift ? buildGiftInGroupReport(selectedGroup, selectedGift, state.profiles, state.evaluations, state.peerRecognitions) : null
 
+  const personInterpretation =
+    selectedProfile && functionalReport && spiritualReport && peerSummary
+      ? interpretPerson(selectedProfile, functionalReport.top3, spiritualReport.top3, peerSummary.top.slice(0, 10))
+      : null
+
+  const groupInterpretation =
+    selectedGroup && groupReport
+      ? interpretGroup(selectedGroup.name, groupReport.top22, groupReport.topConfirmations)
+      : null
+
+  const giftInterpretation =
+    selectedGroup && giftReport
+      ? interpretGift(selectedGroup.name, giftReport.gift, giftReport.totalScore, giftReport.totalConfirmations)
+      : null
+
   const filteredProfiles = profiles.filter((p) =>
     `${p.full_name} ${p.church || ""} ${p.service_areas || ""}`.toLowerCase().includes(search.toLowerCase()),
   )
@@ -1113,29 +1234,6 @@ export default function Page() {
       return computeFunctionalEvaluation(ev).answered === 48 && computeSpiritualEvaluation(ev).answered === 30
     }).length,
     recognitions: state.peerRecognitions.length,
-  }
-
-  async function switchToLocal() {
-    const localAdapter = buildLocalAdapter(setState)
-    setAdapter(localAdapter)
-    await localAdapter.init()
-    setConnectionState({
-      connected: true,
-      mode: "local",
-      message: "Modo local activo",
-    })
-  }
-
-  async function connectSupabase() {
-    if (!supabaseUrl || !supabaseAnonKey) return
-    const remoteAdapter = buildSupabaseAdapter(supabaseUrl, supabaseAnonKey, setState)
-    await remoteAdapter.init()
-    setAdapter(remoteAdapter)
-    setConnectionState({
-      connected: true,
-      mode: "supabase",
-      message: "Conectado a Supabase. Multiusuario y persistencia activados.",
-    })
   }
 
   async function persistLocal(nextState: AppState) {
@@ -1414,12 +1512,12 @@ export default function Page() {
           <CardContent className="p-5 md:p-7">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · v9</div>
+                <div className="text-sm font-medium text-slate-500">Plataforma Dones Amistad Irapuato · v11</div>
                 <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                   Sistema multiusuario de dones funcionales y espirituales
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  PDF estructurado, reportes separados y control completo.
+                  Reportes híbridos, PDF mejorado y operación limpia para usuarios.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -1452,43 +1550,31 @@ export default function Page() {
           </ScrollArea>
 
           <TabsContent value="inicio" className="space-y-4">
-            <Card className="rounded-3xl">
-              <CardHeader>
-                <CardTitle>Conectividad y persistencia</CardTitle>
-                <CardDescription>{connectionState.message}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Alert>
-                  <Database className="h-4 w-4" />
-                  <AlertDescription>
-                    Estado: <strong>{connectionState.mode === "supabase" ? "Supabase" : "Local"}</strong>
-                  </AlertDescription>
-                </Alert>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <Label>Supabase URL</Label>
-                    <Input value={supabaseUrl} onChange={(e) => setSupabaseUrl(e.target.value)} />
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Supabase anon key</Label>
-                    <Input value={supabaseAnonKey} onChange={(e) => setSupabaseAnonKey(e.target.value)} />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={connectSupabase}>
-                    <Cloud className="mr-2 h-4 w-4" />
-                    Conectar Supabase
-                  </Button>
-                  <Button variant="secondary" onClick={switchToLocal}>Usar modo local</Button>
-                </div>
-              </CardContent>
-            </Card>
-
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <FeatureCard icon={UserPlus} title="Usuarios" description="Crear, revisar y eliminar usuarios." onClick={() => setActiveTab("usuarios")} />
-              <FeatureCard icon={ClipboardCheck} title="Evaluar" description="Guardar evaluaciones con colores 1–5." onClick={() => setActiveTab("evaluar")} />
-              <FeatureCard icon={Users} title="Grupos" description="Agregar, editar, quitar miembros y eliminar grupos." onClick={() => setActiveTab("grupos")} />
-              <FeatureCard icon={BarChart3} title="Reportes" description="Separados por persona, grupo y don." onClick={() => setActiveTab("reportes")} />
+              <FeatureCard
+                icon={UserPlus}
+                title="Usuarios"
+                description="Crear, revisar y eliminar usuarios."
+                onClick={() => setActiveTab("usuarios")}
+              />
+              <FeatureCard
+                icon={ClipboardCheck}
+                title="Evaluar"
+                description="Guardar evaluaciones con colores 1–5."
+                onClick={() => setActiveTab("evaluar")}
+              />
+              <FeatureCard
+                icon={Users}
+                title="Grupos"
+                description="Agregar, editar, quitar miembros y eliminar grupos."
+                onClick={() => setActiveTab("grupos")}
+              />
+              <FeatureCard
+                icon={BarChart3}
+                title="Reportes"
+                description="Separados por persona, grupo y don."
+                onClick={() => setActiveTab("reportes")}
+              />
             </div>
           </TabsContent>
 
@@ -1940,9 +2026,9 @@ export default function Page() {
                     </div>
                     <Button
                       variant="outline"
-                      disabled={!selectedProfile || !functionalReport || !spiritualReport || !peerSummary}
+                      disabled={!selectedProfile || !functionalReport || !spiritualReport || !peerSummary || !personInterpretation}
                       onClick={() => {
-                        if (!selectedProfile || !functionalReport || !spiritualReport || !peerSummary) return
+                        if (!selectedProfile || !functionalReport || !spiritualReport || !peerSummary || !personInterpretation) return
                         exportPersonReportPdf({
                           fileName: `Reporte_Persona_${selectedProfile.full_name.replace(/\s+/g, "_")}.pdf`,
                           generatedAt: new Date().toLocaleString(),
@@ -1956,6 +2042,7 @@ export default function Page() {
                           seenByOthers: peerSummary.top.slice(0, 10),
                           functionalScores: Object.entries(functionalReport.scores).sort((a, b) => b[1] - a[1]),
                           spiritualScores: Object.entries(spiritualReport.scores).sort((a, b) => b[1] - a[1]),
+                          interpretation: personInterpretation,
                         })
                         flashSaved("PDF individual generado correctamente")
                       }}
@@ -1966,7 +2053,7 @@ export default function Page() {
                   </CardContent>
                 </Card>
 
-                {selectedProfile && functionalReport && spiritualReport && peerSummary ? (
+                {selectedProfile && functionalReport && spiritualReport && peerSummary && personInterpretation ? (
                   <Card className="rounded-3xl">
                     <CardHeader>
                       <CardTitle>Reporte de persona · {selectedProfile.full_name}</CardTitle>
@@ -1981,6 +2068,20 @@ export default function Page() {
                         <Metric label="Funcional" value={`${Math.round(functionalReport.completionPct * 100)}%`} percent={functionalReport.completionPct * 100} />
                         <Metric label="Espiritual" value={`${Math.round(spiritualReport.completionPct * 100)}%`} percent={spiritualReport.completionPct * 100} />
                       </div>
+
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        <InterpretationCard title="Lectura técnica" body={personInterpretation.technical} />
+                        <InterpretationCard title="Lectura ministerial" body={personInterpretation.ministerial} />
+                      </div>
+
+                      <Card className="rounded-2xl">
+                        <CardHeader><CardTitle className="text-base">Recomendaciones</CardTitle></CardHeader>
+                        <CardContent className="space-y-2 text-sm text-slate-700">
+                          {personInterpretation.recommendations.map((item, idx) => (
+                            <div key={idx}>• {item}</div>
+                          ))}
+                        </CardContent>
+                      </Card>
 
                       <div className="grid gap-4 xl:grid-cols-3">
                         <TopCard title="Top funcional" items={functionalReport.top3} />
@@ -2016,9 +2117,9 @@ export default function Page() {
                     </div>
                     <Button
                       variant="outline"
-                      disabled={!selectedGroup || !groupReport}
+                      disabled={!selectedGroup || !groupReport || !groupInterpretation}
                       onClick={() => {
-                        if (!selectedGroup || !groupReport) return
+                        if (!selectedGroup || !groupReport || !groupInterpretation) return
                         exportGroupReportPdf({
                           fileName: `Reporte_Grupo_${selectedGroup.name.replace(/\s+/g, "_")}.pdf`,
                           generatedAt: new Date().toLocaleString(),
@@ -2029,6 +2130,7 @@ export default function Page() {
                           confirmations: groupReport.topConfirmations,
                           functionalAgg: Object.entries(groupReport.functionalAgg).sort((a, b) => b[1] - a[1]),
                           spiritualAgg: Object.entries(groupReport.spiritualAgg).sort((a, b) => b[1] - a[1]),
+                          interpretation: groupInterpretation,
                         })
                         flashSaved("PDF grupal generado correctamente")
                       }}
@@ -2039,7 +2141,7 @@ export default function Page() {
                   </CardContent>
                 </Card>
 
-                {selectedGroup && groupReport ? (
+                {selectedGroup && groupReport && groupInterpretation ? (
                   <Card className="rounded-3xl">
                     <CardHeader>
                       <CardTitle>Reporte de grupo · {selectedGroup.name}</CardTitle>
@@ -2056,6 +2158,20 @@ export default function Page() {
                         <Metric label="Top 3" value={groupReport.top22[2]?.name || "-"} />
                         <Metric label="Confirmaciones" value={groupReport.topConfirmations[0]?.name || "-"} />
                       </div>
+
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        <InterpretationCard title="Lectura técnica" body={groupInterpretation.technical} />
+                        <InterpretationCard title="Lectura ministerial" body={groupInterpretation.ministerial} />
+                      </div>
+
+                      <Card className="rounded-2xl">
+                        <CardHeader><CardTitle className="text-base">Recomendaciones</CardTitle></CardHeader>
+                        <CardContent className="space-y-2 text-sm text-slate-700">
+                          {groupInterpretation.recommendations.map((item, idx) => (
+                            <div key={idx}>• {item}</div>
+                          ))}
+                        </CardContent>
+                      </Card>
 
                       <div className="grid gap-4 xl:grid-cols-3">
                         <GiftTable title="Top funcional del grupo" entries={Object.entries(groupReport.functionalAgg).sort((a, b) => b[1] - a[1]).slice(0, 12)} max={Math.max(...Object.values(groupReport.functionalAgg), 1)} />
@@ -2103,9 +2219,9 @@ export default function Page() {
                       <Button
                         className="w-full"
                         variant="outline"
-                        disabled={!selectedGroup || !giftReport}
+                        disabled={!selectedGroup || !giftReport || !giftInterpretation}
                         onClick={() => {
-                          if (!selectedGroup || !giftReport) return
+                          if (!selectedGroup || !giftReport || !giftInterpretation) return
                           exportGiftInGroupPdf({
                             fileName: `Reporte_Don_${selectedGift.replace(/\s+/g, "_")}_${selectedGroup.name.replace(/\s+/g, "_")}.pdf`,
                             generatedAt: new Date().toLocaleString(),
@@ -2122,6 +2238,7 @@ export default function Page() {
                               completion: r.completion,
                               semaphore: r.semaphore,
                             })),
+                            interpretation: giftInterpretation,
                           })
                           flashSaved("PDF por don generado correctamente")
                         }}
@@ -2133,7 +2250,7 @@ export default function Page() {
                   </CardContent>
                 </Card>
 
-                {giftReport ? (
+                {giftReport && giftInterpretation ? (
                   <Card className="rounded-3xl">
                     <CardHeader>
                       <CardTitle>Reporte por don · {giftReport.gift}</CardTitle>
@@ -2145,6 +2262,20 @@ export default function Page() {
                         <Metric label="Confirmaciones del don" value={giftReport.totalConfirmations} />
                         <Metric label="Promedio completado" value={`${Math.round(giftReport.avgCompletion)}%`} percent={giftReport.avgCompletion} />
                       </div>
+
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        <InterpretationCard title="Lectura técnica" body={giftInterpretation.technical} />
+                        <InterpretationCard title="Lectura ministerial" body={giftInterpretation.ministerial} />
+                      </div>
+
+                      <Card className="rounded-2xl">
+                        <CardHeader><CardTitle className="text-base">Recomendaciones</CardTitle></CardHeader>
+                        <CardContent className="space-y-2 text-sm text-slate-700">
+                          {giftInterpretation.recommendations.map((item, idx) => (
+                            <div key={idx}>• {item}</div>
+                          ))}
+                        </CardContent>
+                      </Card>
 
                       <Card className="rounded-2xl">
                         <CardHeader><CardTitle className="text-base">Miembros del grupo para este don</CardTitle></CardHeader>
